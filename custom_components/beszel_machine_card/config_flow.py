@@ -1,4 +1,4 @@
-"""Config flow for Beszel Agent Integration — username/password auth."""
+"""Config flow for Home Assistant Beszel Agent Integration — username/password auth."""
 
 from __future__ import annotations
 

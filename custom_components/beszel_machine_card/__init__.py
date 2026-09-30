@@ -1,4 +1,4 @@
-"""Beszel Agent Integration with bundled Lovelace cards."""
+"""Home Assistant Beszel Agent Integration with bundled Lovelace cards."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         await _async_ensure_lovelace_resource(hass, url, versioned)
 
     hass.data[FRONTEND_REGISTERED] = True
-    _LOGGER.info("Beszel Agent Integration frontend registered (v%s)", CARD_VERSION)
+    _LOGGER.info("Home Assistant Beszel Agent Integration frontend registered (v%s)", CARD_VERSION)
 
 
 async def _async_lovelace_resources(hass: HomeAssistant):

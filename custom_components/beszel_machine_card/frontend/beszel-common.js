@@ -1,5 +1,5 @@
 /**
- * beszel-common.js — shared helpers for the Beszel Agent Integration cards.
+ * beszel-common.js — shared helpers for the Home Assistant Beszel Agent Integration cards.
  *
  * Imported as an ES module by beszel-machine-card.js and
  * beszel-systems-table-card.js so both cards format, colour and resolve

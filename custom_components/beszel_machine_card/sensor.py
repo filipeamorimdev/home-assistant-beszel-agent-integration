@@ -1,4 +1,4 @@
-"""Sensor platform for Beszel Agent Integration."""
+"""Sensor platform for Home Assistant Beszel Agent Integration."""
 
 from __future__ import annotations
 

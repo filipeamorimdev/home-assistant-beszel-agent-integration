@@ -1,0 +1,55 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please make sure the machine shows as **Up** in the Beszel web UI first.
+        Remove passwords, tokens and public hostnames from anything you paste.
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.6.0"
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: beszel_version
+    attributes:
+      label: Beszel Hub and agent versions
+      placeholder: "Hub 0.x.x, agent 0.x.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does the problem happen?
+      options:
+        - Setup / sign-in
+        - Sensors / entities
+        - Machine card
+        - Systems table card
+        - Terminal style / old browser
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, card YAML or screenshots
+      description: Home Assistant log lines mentioning `beszel_machine_card`, browser console errors, or your card configuration.
+      render: shell

@@ -1,10 +1,12 @@
-# Beszel Agent Integration for Home Assistant
+# Home Assistant Beszel Agent Integration
 
 Bring your [Beszel](https://beszel.dev/) monitored servers into Home Assistant — as devices, sensors, and ready-made dashboard cards.
 
 > **Unofficial project.** Not affiliated with the Beszel project. All monitoring is done by [Beszel](https://github.com/henrygd/beszel) by [henrygd](https://github.com/henrygd) — see [Credits](#credits).
 
-![Beszel Agent Integration preview](docs/images/beszel-card-preview.gif)
+> **Background:** this project is an evolution of [home-assistant-glances-card](https://github.com/filipeamorimdev/home-assistant-glances-card). I migrated my infrastructure monitoring from Glances to Beszel, and this is the Home Assistant side of that move.
+
+![Home Assistant Beszel Agent Integration preview](docs/images/beszel-card-preview.gif)
 
 ## Features
 
@@ -30,10 +32,10 @@ Once a machine shows as **Up** in the Beszel web UI, it will appear in Home Assi
 
 Manual custom-component install (HACS is not supported for now):
 
-1. Download this repository (**Code → Download ZIP**, or `git clone`).
+1. Download the latest zip from [Releases](../../releases) (or use **Code → Download ZIP** / `git clone`).
 2. Copy `custom_components/beszel_machine_card` into your Home Assistant `config/custom_components/` folder.
 3. Restart Home Assistant.
-4. Go to **Settings → Devices & services → Add integration** and search for **Beszel Agent Integration**.
+4. Go to **Settings → Devices & services → Add integration** and search for **Home Assistant Beszel Agent Integration**.
 
 The cards are loaded by the integration itself — no Lovelace resource to add. To update, replace the folder, restart, and hard-refresh your browser.
 

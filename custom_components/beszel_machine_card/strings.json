@@ -1,5 +1,5 @@
 {
-  "title": "Beszel Agent Integration",
+  "title": "Home Assistant Beszel Agent Integration",
   "config": {
     "step": {
       "user": {

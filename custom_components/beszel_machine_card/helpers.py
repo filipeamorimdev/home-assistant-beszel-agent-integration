@@ -1,4 +1,4 @@
-"""URL helpers shared by the Beszel Agent Integration config flow."""
+"""URL helpers shared by the Home Assistant Beszel Agent Integration config flow."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 /**
- * beszel-machine-card.js — bundled with the Beszel Agent Integration
+ * beszel-machine-card.js — bundled with the Home Assistant Beszel Agent Integration
  * A Lovelace custom card for one machine monitored by Beszel.
  *
  * Installed and served automatically by custom_components/beszel_machine_card.
@@ -53,7 +53,7 @@ import {
   temperatureLevel,
   thresholds,
   validReading,
-} from './beszel-common.js?v=0.7.0';
+} from './beszel-common.js?v=0.1.0';
 
 // ─── Sensor discovery heuristics ────────────────────────────────────────────
 // For each slot, we try a list of patterns (ordered by confidence).
@@ -1219,7 +1219,7 @@ if (!window.customCards.some(card => card.type === 'beszel-machine-card')) {
   window.customCards.push({
     type: 'beszel-machine-card',
     name: 'Beszel Agent Machine Card',
-    description: 'Single-machine card from the Beszel Agent Integration.',
+    description: 'Single-machine card from the Home Assistant Beszel Agent Integration.',
     preview: false,
   });
 }

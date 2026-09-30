@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Problem with Beszel itself (Hub or agent)
+    url: https://github.com/henrygd/beszel/issues
+    about: This project only reads data from Beszel. Hub and agent bugs belong upstream.

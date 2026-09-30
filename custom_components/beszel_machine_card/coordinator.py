@@ -1,4 +1,4 @@
-"""Data update coordinator for Beszel Agent Integration."""
+"""Data update coordinator for Home Assistant Beszel Agent Integration."""
 
 from __future__ import annotations
 
