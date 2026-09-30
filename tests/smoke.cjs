@@ -179,6 +179,36 @@ assert.match(html, /Swap &lt;usage&gt;/);
 assert.doesNotMatch(html, /truenas Swap/);
 assert.match(html, /class="metric-val">0<\/span>/);
 
+// Editor-saved cards show only what was selected: blank slots stay blank and
+// expanded sizes (used/total/cache) appear only when picked as extras.
+const editorSlots = {
+  entity_status: 'sensor.truenas_status', entity_cpu: 'sensor.truenas_cpu_usage',
+  entity_mem: 'sensor.truenas_memory_usage', entity_disk: 'sensor.truenas_disk_usage',
+  entity_temp: '', entity_net_rx: '', entity_net_tx: '', entity_uptime: '',
+  entity_load_1: '', entity_load_5: '', entity_load_15: '',
+};
+card.setConfig({ device_id: 'dev1', ...editorSlots });
+html = card.shadowRoot.innerHTML;
+assert.doesNotMatch(html, /cache|GiB/, 'unselected memory sizes must not appear');
+assert.doesNotMatch(html, /61\.5|741 KiB|7d 6h/, 'blank slots must not be auto-discovered');
+card.setConfig({ device_id: 'dev1', ...editorSlots, entity_cpu: '', entity_disk: '' });
+html = card.shadowRoot.innerHTML;
+assert.doesNotMatch(html, />CPU<|>Disk</, 'unselected sensors get no tile');
+assert.match(html, />RAM</);
+card.setConfig({ device_id: 'dev1', ...editorSlots, entity_cpu: '', entity_mem: '', entity_disk: '' });
+assert.doesNotMatch(card.shadowRoot.innerHTML, /class="metrics"/, 'no empty tile grid');
+card.setConfig({ device_id: 'dev1', ...editorSlots, entity_cpu: '', style: 'terminal' });
+html = card.shadowRoot.innerHTML;
+assert.doesNotMatch(html, />cpu |>net |>temp /, 'terminal skips unselected rows');
+assert.match(html, />mem  </);
+card.setConfig({ device_id: 'dev1', ...editorSlots, layout: 'detailed' });
+assert.doesNotMatch(card.shadowRoot.innerHTML, /Load Avg:/);
+card.setConfig({ device_id: 'dev1', ...editorSlots, extra_entities: ['sensor.truenas_memory_cache'] });
+html = card.shadowRoot.innerHTML;
+assert.match(html, /cache 1\.0 GiB/);
+assert.doesNotMatch(html, /8\.1 \/ 15\.6/);
+assert.doesNotMatch(html, /Memory cache/, 'selected cache merges into the RAM tile');
+
 // Detailed layout follows Beszel's list.
 card.setConfig({ device_id: 'dev1', layout: 'detailed', title: '<img src=x onerror=alert(1)>' });
 html = card.shadowRoot.innerHTML;
@@ -226,7 +256,8 @@ card.setConfig({ device_id: 'dev1' });
 card.hass = blank;
 html = card.shadowRoot.innerHTML;
 assert.match(html, /class="metric-val">0\.00<\/span>/);
-assert.match(html, /class="metric-val"><\/span><span class="metric-unit"><\/span>/);
+assert.doesNotMatch(html, /class="metric-val"><\/span>/, 'tiles without a reading are not shown');
+assert.equal((html.match(/class="bar-wrap"/g) || []).length, 1, 'only the CPU tile has a reading');
 assert.doesNotMatch(html, /NaN|—%|>unknown<|↑ <\/div>/);
 
 // °F sensors keep their unit.

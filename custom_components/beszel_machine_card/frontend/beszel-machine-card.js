@@ -26,6 +26,7 @@
  */
 
 import {
+  CORE_KEYS,
   DETAIL_CSS,
   THEME_CSS,
   buildSystemModel,
@@ -306,8 +307,19 @@ class BeszelMachineCard extends HTMLElement {
     return result;
   }
 
-  // Resolve every metric: explicit entity_* keys win, then the device's own
-  // entities from the frontend registry, then siblings of configured IDs.
+  // Cards saved by the visual editor carry a device plus entity_* slots (empty
+  // string = deliberately left blank). Those selections are authoritative.
+  _editorManaged() {
+    const c = this._config || {};
+    return Boolean(c.device_id)
+      && Object.keys(ENTITY_CONFIG_KEYS).some(key => Object.prototype.hasOwnProperty.call(c, key));
+  }
+
+  // Resolve every metric. Editor-managed cards show only the selected slots,
+  // plus expanded metrics (RAM/disk sizes, cache, fans) chosen under
+  // "Additional Beszel metrics". Minimal YAML (device_id only) resolves every
+  // metric from the device's registry entities; entity_* only configs derive
+  // siblings of the configured IDs.
   _entities() {
     const hass = this._hass;
     if (this._resolved && this._resolved.config === this._config
@@ -322,7 +334,20 @@ class BeszelMachineCard extends HTMLElement {
     const discovered = deviceId && pick(hass, 'entities')
       ? systemEntitiesForDevice(hass, deviceId)
       : systemEntitiesFromSeeds(hass, seeds);
-    const value = { entities: { ...discovered, ...explicit }, deviceId };
+    let base = discovered;
+    if (this._editorManaged()) {
+      const chosen = new Set(this._config.extra_entities || []);
+      base = {};
+      for (const [key, id] of Object.entries(discovered)) {
+        if (key === 'fans') {
+          const fans = id.filter(fan => chosen.has(fan));
+          if (fans.length) base.fans = fans;
+        } else if (!CORE_KEYS.includes(key) && chosen.has(id)) {
+          base[key] = id;
+        }
+      }
+    }
+    const value = { entities: { ...base, ...explicit }, deviceId };
     this._resolved = { config: this._config, registry: pick(hass, 'entities'), value };
     return value;
   }
@@ -421,12 +446,14 @@ class BeszelMachineCard extends HTMLElement {
       entities.memory_used, entities.memory_total, entities.memory_cache,
       entities.disk_used, entities.disk_total,
     ].filter(Boolean));
+    // A tile appears only when its sensor is selected and has a valid reading.
     const tiles = [
-      this._tile('CPU', model.cpu, limits),
-      this._tile('RAM', model.memory, limits, memorySub),
-      this._tile('Disk', model.disk, limits, diskSub),
-    ];
-    if (Number.isFinite(model.gpu)) tiles.push(this._tile('GPU', model.gpu, limits));
+      ['CPU', model.cpu, ''],
+      ['RAM', model.memory, memorySub],
+      ['Disk', model.disk, diskSub],
+      ['GPU', model.gpu, ''],
+    ].filter(([, value]) => Number.isFinite(value))
+      .map(([label, value, sub]) => this._tile(label, value, limits, sub));
     for (const extra of this._extras(merged)) {
       tiles.push(`<div class="metric extra-row"><div class="metric-label">${escapeHtml(extra.label)}</div>`
         + `<span class="metric-val">${escapeHtml(extra.value)}</span><span class="metric-unit">${escapeHtml(extra.unit)}</span></div>`);
@@ -442,7 +469,8 @@ class BeszelMachineCard extends HTMLElement {
     const footer = net || c.subtitle
       ? `<div class="footer"><div class="net">${net}</div>${c.subtitle ? `<div class="subtitle">${escapeHtml(c.subtitle)}</div>` : ''}</div>`
       : '';
-    return `${header}${warning}<div class="metrics">${tiles.join('')}</div>${footer}`;
+    const metrics = tiles.length ? `<div class="metrics">${tiles.join('')}</div>` : '';
+    return `${header}${warning}${metrics}${footer}`;
   }
 
   _detailedHtml(model, limits, entities, name, warning, offline) {
@@ -471,7 +499,8 @@ class BeszelMachineCard extends HTMLElement {
     const offline = c.hide_when_offline === true && model.statusClass === 'down';
     const statusMark = model.statusClass === 'up' ? 'OK' : model.statusClass === 'pending' ? '..' : '!!';
     const pct = value => (Number.isFinite(value) ? `${value.toFixed(1)}%` : '');
-    const line = (label, bar, value) =>
+    // Rows without a selected, valid reading are skipped entirely.
+    const line = (label, bar, value) => !value ? '' :
       `<tr><td class="k">${escapeHtml((label + '     ').slice(0, 5))}</td>`
       + `<td class="b">${escapeHtml(bar)}</td>`
       + `<td class="v">${escapeHtml(value)}</td></tr>`;
@@ -1015,7 +1044,14 @@ class BeszelMachineCardEditor extends HTMLElement {
           margin-top: 8px;
         }
         .section-title:first-child { margin-top: 0; }
-        ha-textfield, #device, #layout, #advanced-preset { display: block; width: 100%; }
+        #device, #layout, #advanced-preset { display: block; width: 100%; }
+        .text-field { display: flex; flex-direction: column; gap: 4px; }
+        .text-field input {
+          box-sizing: border-box; width: 100%; min-height: 40px; padding: 0 10px;
+          border: 1px solid var(--divider-color); border-radius: 4px;
+          background: transparent; color: var(--primary-text-color); font: inherit;
+        }
+        .text-field input:focus { outline: none; border-color: var(--primary-color); }
         .native-entity-picker { display: block; width: 100%; }
         .entity-field { display: flex; flex-direction: column; gap: 4px; }
         .field-label { font-size: 12px; color: var(--primary-text-color); }
@@ -1055,9 +1091,13 @@ class BeszelMachineCardEditor extends HTMLElement {
       <div class="editor">
         <div class="section-title">Display</div>
 
-        <ha-textfield id="title" label="Title" data-key="title"></ha-textfield>
+        <label class="field-label text-field">Title
+          <input type="text" id="title" data-key="title" autocomplete="off">
+        </label>
 
-        <ha-textfield id="subtitle" label="Subtitle (bottom-right)" data-key="subtitle"></ha-textfield>
+        <label class="field-label text-field">Subtitle (bottom-right)
+          <input type="text" id="subtitle" data-key="subtitle" autocomplete="off">
+        </label>
 
         <ha-formfield label="Hide metrics while the system is offline">
           <ha-checkbox id="hide-when-offline"></ha-checkbox>

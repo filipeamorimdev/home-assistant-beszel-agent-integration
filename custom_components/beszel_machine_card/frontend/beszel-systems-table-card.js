@@ -561,6 +561,12 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
     if (!this.shadowRoot || !this._config || !this._hass) return;
     const openDetails = this.shadowRoot.querySelector('details.advanced-columns');
     if (openDetails) this._advancedColumnsOpen = openDetails.open;
+    // A rebuild (e.g. the entity registry refreshing) must not steal focus
+    // from the Title field mid-typing, so remember it and restore it below.
+    const active = this.shadowRoot.activeElement;
+    const focusState = active && active.id === 'title'
+      ? { id: active.id, start: active.selectionStart, end: active.selectionEnd }
+      : null;
     const selectedSystems = new Set(
       pick(this._config.system_ids, 'length')
         ? this._config.system_ids
@@ -572,7 +578,8 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
       <style>
         .editor { display:flex; flex-direction:column; gap:8px; padding:8px 4px; }
         .section { margin-top:8px; color:var(--secondary-text-color); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; }
-        ha-textfield { width:100%; }
+        input[type=text] { box-sizing:border-box; width:100%; min-height:40px; padding:0 10px; border:1px solid var(--divider-color); border-radius:4px; background:transparent; color:var(--primary-text-color); font:inherit; }
+        input[type=text]:focus { outline:none; border-color:var(--primary-color); }
         .checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:3px 8px; }
         .empty, .hint { color:var(--secondary-text-color); font-size:11px; }
         .field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--primary-text-color); }
@@ -580,7 +587,9 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
       </style>
       <div class="editor">
         <div class="section">Display</div>
-        <ha-textfield id="title" label="Title"></ha-textfield>
+        <label class="field">Title
+          <input type="text" id="title" autocomplete="off">
+        </label>
         <label class="field">Layout
           <select id="layout">
             <option value="auto">Automatic (table; grid on narrow cards)</option>
@@ -604,6 +613,10 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
     const title = this.shadowRoot.getElementById('title');
     title.value = this._config.title || '';
     title.addEventListener('input', event => this._emit({ title: event.target.value }));
+    if (focusState) {
+      title.focus();
+      try { title.setSelectionRange(focusState.start, focusState.end); } catch (_) { /* ignore */ }
+    }
     const layout = this.shadowRoot.getElementById('layout');
     layout.value = ['table', 'grid'].includes(this._config.layout) ? this._config.layout : 'auto';
     layout.addEventListener('change', () => this._emit({ layout: layout.value }));
