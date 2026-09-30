@@ -1,0 +1,47 @@
+# Paste this whole file into a native Markdown card's code editor.
+# No custom card JavaScript is needed. Templates run on the HA server.
+type: markdown
+title: Beszel
+content: |-
+  {# Leave empty for all devices, or use any entity ID on one Beszel device. #}
+  {%- set target_entity = '' -%}
+  {# Optionally list exact entity IDs to show; empty means all enabled sensors. #}
+  {%- set only_entities = [] -%}
+  {# Recheck registry membership each minute, including newly added systems. #}
+  {%- set refresh = now().minute -%}
+  {%- set ids = integration_entities('beszel_machine_card') -%}
+  {%- set selected_device = device_id(target_entity) if target_entity else none -%}
+  {%- set ns = namespace(devices=[], lines=[]) -%}
+  {%- for entity in expand(ids) -%}
+    {%- set device = device_id(entity.entity_id) -%}
+    {%- if device and device not in ns.devices and
+          (not target_entity or (target_entity in ids and device == selected_device)) -%}
+      {%- set ns.devices = ns.devices + [device] -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- for device in ns.devices -%}
+    {%- set name = device_attr(device, 'name_by_user') or device_attr(device, 'name') or device -%}
+    {%- set name = name | string | replace('\n', ' ') | replace('\r', ' ') -%}
+    {%- set rows = namespace(lines=[]) -%}
+    {%- for entity in expand(ids) | sort(attribute='name') -%}
+      {%- if device_id(entity.entity_id) == device and
+            (not only_entities or entity.entity_id in only_entities) -%}
+        {%- set label = entity.name | string | replace('\n', ' ') | replace('\r', ' ') -%}
+        {%- set value = entity.state -%}
+        {%- set unit = entity.attributes.get('unit_of_measurement', '') or '' -%}
+        {%- if value | lower in ['', 'unknown', 'unavailable', 'none', 'null', 'nan', 'infinity', '-infinity', 'n/a'] -%}
+          {%- set value = '' -%}
+          {%- set unit = '' -%}
+        {%- endif -%}
+        {%- set reading = (value ~ (' ' ~ unit if unit else '')) | replace('\n', ' ') | replace('\r', ' ') -%}
+        {%- set rows.lines = rows.lines + [label ~ ': ' ~ reading] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- if rows.lines -%}
+      {%- set ns.lines = ns.lines + ['[ ' ~ name ~ ' ]'] + rows.lines + [''] -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if not ns.lines -%}
+    {%- set ns.lines = ['No matching Beszel sensors. Check the integration and target_entity.'] -%}
+  {%- endif -%}
+  <pre>{{ ns.lines | join('\n') | e }}</pre>

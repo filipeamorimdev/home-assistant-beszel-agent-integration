@@ -1,0 +1,8 @@
+{
+  "name": "beszel-agent-integration-tests",
+  "private": true,
+  "description": "Dev-only checks; not shipped with the integration.",
+  "devDependencies": {
+    "acorn": "^8.12.0"
+  }
+}

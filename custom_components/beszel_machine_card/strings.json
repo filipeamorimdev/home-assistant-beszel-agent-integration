@@ -1,0 +1,60 @@
+{
+  "title": "Beszel Agent Integration",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Beszel",
+        "description": "Enter the address of your Beszel Hub (for example `http://192.168.1.10:8090` or `https://beszel.example.com`). Home Assistant must be able to reach this URL.",
+        "data": {
+          "url": "Beszel Hub URL"
+        }
+      },
+      "password": {
+        "title": "Beszel account",
+        "description": "Sign in with the same email/username and password you use in the Beszel web UI. A readonly user is enough. The password is only used once to create a session; Home Assistant stores the resulting access token and refreshes it automatically.",
+        "data": {
+          "username": "Email or username",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to Beszel",
+        "description": "The Beszel session is missing, expired, or was rejected. Continue to sign in again with your Beszel username and password."
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the Beszel Hub",
+      "invalid_url": "Enter a valid HTTP or HTTPS Beszel Hub URL",
+      "invalid_auth": "Invalid username or password. Use a normal Beszel user account (not the PocketBase admin)."
+    },
+    "abort": {
+      "already_configured": "This Beszel Hub is already configured",
+      "cannot_connect": "Could not connect to the Beszel Hub",
+      "reauth_failed": "Could not restart Beszel sign-in",
+      "reauth_successful": "Beszel authorization updated"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": { "name": "Status" },
+      "cpu_usage": { "name": "CPU usage" },
+      "memory_usage": { "name": "Memory usage" },
+      "disk_usage": { "name": "Disk usage" },
+      "cpu_temperature": { "name": "CPU temperature" },
+      "network_received_speed": { "name": "Network received speed" },
+      "network_sent_speed": { "name": "Network sent speed" },
+      "uptime": { "name": "Uptime" },
+      "load_1m": { "name": "Load (1 minute)" },
+      "load_5m": { "name": "Load (5 minutes)" },
+      "load_15m": { "name": "Load (15 minutes)" },
+      "gpu_usage": { "name": "GPU usage" },
+      "battery": { "name": "Battery" },
+      "services_total": { "name": "Services total" },
+      "services_failed": { "name": "Services failed" },
+      "agent_version": { "name": "Agent version" }
+    },
+    "binary_sensor": {
+      "hub_connection": { "name": "Connection" }
+    }
+  }
+}
