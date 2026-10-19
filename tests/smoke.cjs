@@ -477,6 +477,55 @@ tableCard.setConfig({ ...tableCard._config, hide_when_offline: true });
 tableCard.hass = hass;
 assert.match(tableCard.shadowRoot.innerHTML, /All matched systems are offline/);
 
+// only_alerts keeps systems with an amber/red indicator and drops the rest.
+hass = tableHass();
+tableCard.setConfig({ title: 'Alerts', layout: 'table', only_alerts: true, hide_when_offline: false });
+tableCard.hass = hass;
+tableHtml = tableCard.shadowRoot.innerHTML;
+assert.match(tableHtml, /data-device="srv"/, 'srv has critical memory and a failed service');
+assert.doesNotMatch(tableHtml, /data-device="nas"/, 'all-green nas is hidden');
+assert.equal(tableCard.getCardSize(), 2);
+hass.states['sensor.srv_status'].state = 'down';
+tableCard.hass = hass;
+assert.doesNotMatch(tableCard.shadowRoot.innerHTML, /data-device="srv"/, 'offline systems are hidden even with hide_when_offline off');
+assert.match(tableCard.shadowRoot.innerHTML, /No systems with alerts\./);
+// Each indicator counts on its own: status pending, temperature, battery, load, GPU.
+for (const [label, mutate] of [
+  ['pending status', h => { h.states['sensor.nas_status'].state = 'pending'; }],
+  ['hot cpu', h => { h.states['sensor.nas_cpu_temperature'] = { state: '70', attributes: { unit_of_measurement: '°C' } }; h.entities['sensor.nas_cpu_temperature'] = { entity_id: 'sensor.nas_cpu_temperature', device_id: 'nas', platform: 'beszel_machine_card', translation_key: 'cpu_temperature' }; }],
+  ['low battery', h => { h.states['sensor.nas_battery'] = { state: '20', attributes: { unit_of_measurement: '%' } }; h.entities['sensor.nas_battery'] = { entity_id: 'sensor.nas_battery', device_id: 'nas', platform: 'beszel_machine_card', translation_key: 'battery' }; }],
+  ['cpu at warning threshold', h => { h.states['sensor.nas_cpu_usage'].state = '65'; }],
+]) {
+  hass = tableHass();
+  hass.states['sensor.srv_memory_usage'].state = '10';
+  hass.states['sensor.srv_services_failed'].state = '0';
+  hass.states['sensor.srv_load_1m'].state = '0.5';
+  mutate(hass);
+  tableCard.setConfig({ title: 'Alerts', layout: 'table', only_alerts: true });
+  tableCard.hass = hass;
+  tableHtml = tableCard.shadowRoot.innerHTML;
+  assert.match(tableHtml, /data-device="nas"/, `${label} is an alert`);
+  assert.doesNotMatch(tableHtml, /data-device="srv"/, `${label}: calm srv is hidden`);
+}
+// Custom thresholds apply to the filter too.
+hass = tableHass();
+hass.states['sensor.srv_memory_usage'].state = '50';
+hass.states['sensor.srv_services_failed'].state = '0';
+hass.states['sensor.srv_load_1m'].state = '0.5';
+tableCard.setConfig({ title: 'Alerts', layout: 'table', only_alerts: true, warning_threshold: 40, critical_threshold: 80 });
+tableCard.hass = hass;
+assert.match(tableCard.shadowRoot.innerHTML, /data-device="srv"/, 'lower warning threshold surfaces srv');
+// Terminal style shares the filter and its empty state.
+hass = tableHass();
+hass.states['sensor.srv_memory_usage'].state = '10';
+hass.states['sensor.srv_services_failed'].state = '0';
+hass.states['sensor.srv_load_1m'].state = '0.5';
+tableCard.setConfig({ title: 'T', style: 'terminal', only_alerts: true, columns: ['cpu'] });
+tableCard.hass = hass;
+assert.match(tableCard.shadowRoot.innerHTML, /no alerts/);
+assert.match(tableSource, /Show only systems with alerts/);
+tableCard.setConfig({ title: 'Table', layout: 'table' });
+
 // Hub warning.
 hass = tableHass();
 hass.states['binary_sensor.beszel_hub_connection'].state = 'off';

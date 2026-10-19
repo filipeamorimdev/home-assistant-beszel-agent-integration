@@ -94,6 +94,7 @@ Or use the grid layout, which suits phones and narrow columns:
 
 - Click a header to sort; click a row to open the device page.
 - Offline machines stay in the list with blank metrics, so a machine that stops reporting is obvious. **Hide offline systems** removes them.
+- **Show only systems with alerts** (`only_alerts: true`) keeps just the machines with an amber or red indicator — CPU, memory, disk, GPU or load over the warning threshold, hot CPU, low battery, a failed service, or a pending status. All-green and offline machines are hidden.
 - Columns that no machine reports are hidden automatically.
 
 ```yaml
@@ -102,6 +103,7 @@ title: Homelab
 layout: auto              # table | grid | auto
 columns: [cpu, load, temperature]
 hide_when_offline: true
+only_alerts: false
 ```
 
 ### Terminal style

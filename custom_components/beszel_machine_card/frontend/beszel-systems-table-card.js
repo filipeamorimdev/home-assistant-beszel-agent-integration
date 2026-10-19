@@ -32,6 +32,7 @@ import {
   rateBytes,
   readingNumber,
   renderDetailRows,
+  temperatureLevel,
   thresholds,
 } from './beszel-common.js?v=0.1.0';
 
@@ -82,6 +83,7 @@ const DEFAULT_CONFIG = {
   layout: 'auto',
   show_hub_status: true,
   hide_when_offline: true,
+  only_alerts: false,
   hide_empty_columns: true,
   split_network: false,
   style: 'default',
@@ -102,6 +104,25 @@ function writeStorage(key, value) {
 
 function statusLevelOf(model) {
   return { up: 'ok', pending: 'warn', down: 'crit', unknown: 'none' }[model.statusClass] || 'none';
+}
+
+// True when any indicator the card draws for this system is amber or red.
+// Offline systems never count: their metrics are gone, so there is nothing to
+// act on beyond the status itself.
+function hasAlert(model, limits) {
+  if (model.statusClass === 'down') return false;
+  const levels = [
+    model.statusClass === 'pending' ? 'warn' : 'ok',
+    meterLevel(model.cpu, limits),
+    meterLevel(model.memory, limits),
+    meterLevel(model.disk, limits),
+    meterLevel(model.gpu, limits),
+    batteryLevel(model.battery),
+    loadLevel(model.loads, model.threads, limits),
+    model.temperature ? temperatureLevel(model.temperature.celsius) : 'none',
+    model.servicesFailed > 0 ? 'crit' : 'ok',
+  ];
+  return levels.some(level => level === 'warn' || level === 'crit');
 }
 
 const TABLE_CSS = `
@@ -235,6 +256,10 @@ class BeszelSystemsTableCard extends HTMLElement {
         return status === 'up' || status === 'on' || status === 'paused' || status === 'pending';
       });
     }
+    if (pick(this._config, 'only_alerts') === true) {
+      const limits = thresholds(this._config);
+      systems = systems.filter(system => hasAlert(this._model(system), limits));
+    }
     return systems;
   }
 
@@ -278,7 +303,7 @@ class BeszelSystemsTableCard extends HTMLElement {
           ? escapeHtml(split)
           : `<span title="${escapeHtml(split)}">${escapeHtml(formatRate(networkTotal(model)))}</span>`;
       }
-      case 'temperature': return model.temperature ? escapeHtml(model.temperature.text) : '';
+      case 'temperature': return model.temperature ? `<span class="bz-dot bz-${temperatureLevel(model.temperature.celsius)}"></span>${escapeHtml(model.temperature.text)}` : '';
       case 'services':
         if (!Number.isFinite(model.servicesTotal)) return '';
         return `<span class="bz-dot bz-${model.servicesFailed > 0 ? 'crit' : 'ok'}"></span>${escapeHtml(formatNumber(model.servicesTotal))}`
@@ -357,9 +382,11 @@ class BeszelSystemsTableCard extends HTMLElement {
     if (!rows.length) {
       body = !this._registryLoaded
         ? '<div class="empty">Discovering Beszel systems…</div>'
-        : (this._systems || []).length
-          ? '<div class="empty">All matched systems are offline.</div>'
-          : '<div class="empty">No Beszel system devices were found.</div>';
+        : !(this._systems || []).length
+          ? '<div class="empty">No Beszel system devices were found.</div>'
+          : c.only_alerts === true
+            ? '<div class="empty">No systems with alerts.</div>'
+            : '<div class="empty">All matched systems are offline.</div>';
     } else if (this._layout() === 'grid') {
       body = `<div class="grid">${rows.map(({ system, model }) => `
         <div class="grid-card">
@@ -455,7 +482,7 @@ class BeszelSystemsTableCard extends HTMLElement {
       if (!this._registryLoaded) {
         lines.push('loading...');
       } else if (!systems.length) {
-        lines.push((this._systems || []).length ? 'all offline' : 'no systems');
+        lines.push(!(this._systems || []).length ? 'no systems' : this._config.only_alerts === true ? 'no alerts' : 'all offline');
       } else {
         for (const system of systems) {
           const model = this._model(system);
@@ -599,6 +626,7 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
         </label>
         <ha-formfield label="Show Hub connection warning"><ha-checkbox id="hub-status"></ha-checkbox></ha-formfield>
         <ha-formfield label="Hide offline systems"><ha-checkbox id="hide-offline"></ha-checkbox></ha-formfield>
+        <ha-formfield label="Show only systems with alerts (hide all-green and offline)"><ha-checkbox id="only-alerts"></ha-checkbox></ha-formfield>
         <ha-formfield label="Hide columns no system reports"><ha-checkbox id="hide-empty-columns"></ha-checkbox></ha-formfield>
         <ha-formfield label="Split network into ↓ / ↑"><ha-checkbox id="split-network"></ha-checkbox></ha-formfield>
         <ha-formfield label="Terminal style (plain monospace layout)"><ha-checkbox id="terminal-style"></ha-checkbox></ha-formfield>
@@ -628,6 +656,7 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
     };
     bind('hub-status', 'show_hub_status', true);
     bind('hide-offline', 'hide_when_offline', true);
+    bind('only-alerts', 'only_alerts', false);
     bind('hide-empty-columns', 'hide_empty_columns', true);
     bind('split-network', 'split_network', false);
     const terminalStyle = this.shadowRoot.getElementById('terminal-style');

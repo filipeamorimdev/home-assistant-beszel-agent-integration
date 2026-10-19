@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Systems table: **Show only systems with alerts** (`only_alerts`) hides all-green and offline machines, keeping only those with a warning or critical indicator.
+- Systems table: the Temp column now shows the same colour dot as the machine card.
+
 ## [0.1.0] - 2026-09-30
 
 First public release.
