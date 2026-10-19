@@ -240,13 +240,41 @@ card.setConfig({ entity_cpu: 'sensor.truenas_cpu_usage', layout: 'detailed' });
 card.hass = legacyHass;
 assert.match(card.shadowRoot.innerHTML, /1\.01 0\.92 1\.15/);
 
-// Offline machines hide stale readings.
+// hide_when_offline hides the whole card, like HA's conditional card.
 const offline = machineHass();
 offline.states['sensor.truenas_status'].state = 'down';
-card.setConfig({ device_id: 'dev1', hide_when_offline: true });
+const visibility = [];
+card.dispatchEvent = event => { if (event.type === 'card-visibility-changed') visibility.push(event.detail.value); };
+card.setConfig({ device_id: 'dev1' });
 card.hass = offline;
+assert.notEqual(card.hidden, true, 'offline cards stay visible unless hide_when_offline is set');
+assert.match(card.shadowRoot.innerHTML, />down</);
+card.setConfig({ device_id: 'dev1', hide_when_offline: true });
+assert.equal(card.hidden, true);
+assert.equal(card.shadowRoot.innerHTML, '', 'no name, status or placeholder is left behind');
+assert.deepEqual(visibility, [false]);
+card.hass = { ...offline, states: { ...offline.states, 'sensor.truenas_cpu_usage': { state: '1', attributes: {} } } };
+assert.deepEqual(visibility, [false], 'staying offline does not re-announce');
+// Edit mode keeps the card selectable.
+card.preview = true;
+assert.equal(card.hidden, false);
 assert.match(card.shadowRoot.innerHTML, /System offline/);
 assert.doesNotMatch(card.shadowRoot.innerHTML, /16\.1/);
+card.editMode = false;
+assert.equal(card.hidden, true);
+assert.equal(card.shadowRoot.innerHTML, '');
+// Coming back online shows it again.
+card.hass = machineHass();
+assert.equal(card.hidden, false);
+assert.match(card.shadowRoot.innerHTML, /16\.1/);
+assert.deepEqual(visibility, [false, true, false, true]);
+// Paused/pending systems and unavailable status sensors are not offline.
+for (const state of ['paused', 'pending', 'unavailable']) {
+  const other = machineHass();
+  other.states['sensor.truenas_status'].state = state;
+  card.hass = other;
+  assert.equal(card.hidden, false, `${state} keeps the card visible`);
+}
 
 // Missing readings stay blank; real zeros stay zero.
 const blank = machineHass();
@@ -289,7 +317,11 @@ assert.match(html, /\[#+\.+\]/);
 assert.match(html, /61\.5C<\/td><\/tr><\/table>/);
 assert.doesNotMatch(html, /display:\s*flex|grid-template|var\(--|color-mix|clamp\(|@container|cqi|:is\(|:where\(/);
 card.hass = offline;
+assert.equal(card.hidden, true, 'terminal style hides offline cards too');
+assert.equal(card.shadowRoot.innerHTML, '');
+card.preview = true;
 assert.match(card.shadowRoot.innerHTML, /system offline/);
+assert.match(source, /Hide the card while the system is offline/);
 console.log('Beszel Agent Machine Card smoke tests passed.');
 
 // ─── Machine card editor ─────────────────────────────────────────────────────
@@ -476,6 +508,55 @@ hass.states['sensor.nas_status'].state = 'down';
 tableCard.setConfig({ ...tableCard._config, hide_when_offline: true });
 tableCard.hass = hass;
 assert.match(tableCard.shadowRoot.innerHTML, /All matched systems are offline/);
+
+// only_alerts keeps systems with an amber/red indicator and drops the rest.
+hass = tableHass();
+tableCard.setConfig({ title: 'Alerts', layout: 'table', only_alerts: true, hide_when_offline: false });
+tableCard.hass = hass;
+tableHtml = tableCard.shadowRoot.innerHTML;
+assert.match(tableHtml, /data-device="srv"/, 'srv has critical memory and a failed service');
+assert.doesNotMatch(tableHtml, /data-device="nas"/, 'all-green nas is hidden');
+assert.equal(tableCard.getCardSize(), 2);
+hass.states['sensor.srv_status'].state = 'down';
+tableCard.hass = hass;
+assert.doesNotMatch(tableCard.shadowRoot.innerHTML, /data-device="srv"/, 'offline systems are hidden even with hide_when_offline off');
+assert.match(tableCard.shadowRoot.innerHTML, /No systems with alerts\./);
+// Each indicator counts on its own: status pending, temperature, battery, load, GPU.
+for (const [label, mutate] of [
+  ['pending status', h => { h.states['sensor.nas_status'].state = 'pending'; }],
+  ['hot cpu', h => { h.states['sensor.nas_cpu_temperature'] = { state: '70', attributes: { unit_of_measurement: '°C' } }; h.entities['sensor.nas_cpu_temperature'] = { entity_id: 'sensor.nas_cpu_temperature', device_id: 'nas', platform: 'beszel_machine_card', translation_key: 'cpu_temperature' }; }],
+  ['low battery', h => { h.states['sensor.nas_battery'] = { state: '20', attributes: { unit_of_measurement: '%' } }; h.entities['sensor.nas_battery'] = { entity_id: 'sensor.nas_battery', device_id: 'nas', platform: 'beszel_machine_card', translation_key: 'battery' }; }],
+  ['cpu at warning threshold', h => { h.states['sensor.nas_cpu_usage'].state = '65'; }],
+]) {
+  hass = tableHass();
+  hass.states['sensor.srv_memory_usage'].state = '10';
+  hass.states['sensor.srv_services_failed'].state = '0';
+  hass.states['sensor.srv_load_1m'].state = '0.5';
+  mutate(hass);
+  tableCard.setConfig({ title: 'Alerts', layout: 'table', only_alerts: true });
+  tableCard.hass = hass;
+  tableHtml = tableCard.shadowRoot.innerHTML;
+  assert.match(tableHtml, /data-device="nas"/, `${label} is an alert`);
+  assert.doesNotMatch(tableHtml, /data-device="srv"/, `${label}: calm srv is hidden`);
+}
+// Custom thresholds apply to the filter too.
+hass = tableHass();
+hass.states['sensor.srv_memory_usage'].state = '50';
+hass.states['sensor.srv_services_failed'].state = '0';
+hass.states['sensor.srv_load_1m'].state = '0.5';
+tableCard.setConfig({ title: 'Alerts', layout: 'table', only_alerts: true, warning_threshold: 40, critical_threshold: 80 });
+tableCard.hass = hass;
+assert.match(tableCard.shadowRoot.innerHTML, /data-device="srv"/, 'lower warning threshold surfaces srv');
+// Terminal style shares the filter and its empty state.
+hass = tableHass();
+hass.states['sensor.srv_memory_usage'].state = '10';
+hass.states['sensor.srv_services_failed'].state = '0';
+hass.states['sensor.srv_load_1m'].state = '0.5';
+tableCard.setConfig({ title: 'T', style: 'terminal', only_alerts: true, columns: ['cpu'] });
+tableCard.hass = hass;
+assert.match(tableCard.shadowRoot.innerHTML, /no alerts/);
+assert.match(tableSource, /Show only systems with alerts/);
+tableCard.setConfig({ title: 'Table', layout: 'table' });
 
 // Hub warning.
 hass = tableHass();

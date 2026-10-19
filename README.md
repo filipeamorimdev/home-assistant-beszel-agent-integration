@@ -68,12 +68,14 @@ One server, as compact tiles or as a detailed list. Pick a device and everything
 - **Compact** (default): CPU, RAM and Disk tiles with meters, used / total sizes, network speed, temperature and uptime.
 - **Detailed:** the rows of a Beszel system card — CPU, Memory, Disk, Load Avg, Net, Temp, Services, Uptime, Agent — plus any extra metrics you add.
 - Meters change colour at the warning / critical thresholds (65% / 90% by default).
+- **Hide the card while the system is offline** (`hide_when_offline: true`) removes the whole card from the dashboard while the machine is down, like a conditional card. It stays visible in edit mode so you can still configure it.
 
 ```yaml
 type: custom:beszel-machine-card
 device_id: 0123456789abcdef0123456789abcdef
 title: TrueNAS
 layout: detailed          # or compact (default)
+hide_when_offline: false
 ```
 
 ![Card configuration](docs/images/beszel-card-configuration.jpg)
@@ -94,6 +96,7 @@ Or use the grid layout, which suits phones and narrow columns:
 
 - Click a header to sort; click a row to open the device page.
 - Offline machines stay in the list with blank metrics, so a machine that stops reporting is obvious. **Hide offline systems** removes them.
+- **Show only systems with alerts** (`only_alerts: true`) keeps just the machines with an amber or red indicator — CPU, memory, disk, GPU or load over the warning threshold, hot CPU, low battery, a failed service, or a pending status. All-green and offline machines are hidden.
 - Columns that no machine reports are hidden automatically.
 
 ```yaml
@@ -102,6 +105,7 @@ title: Homelab
 layout: auto              # table | grid | auto
 columns: [cpu, load, temperature]
 hide_when_offline: true
+only_alerts: false
 ```
 
 ### Terminal style

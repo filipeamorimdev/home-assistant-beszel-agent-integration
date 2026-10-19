@@ -17,7 +17,7 @@
  *   device_id: <registry id>
  *   title: "NAS"                 # optional, defaults to the device name
  *   subtitle: "TrueNAS"          # optional footer label
- *   hide_when_offline: false
+ *   hide_when_offline: false     # hide the whole card while the system is offline
  *   show_empty_rows: false       # detailed: keep blank GPU/Bat/Services rows
  *   split_network: false         # detailed: ↓/↑ instead of Beszel's combined total
  *   warning_threshold: 65        # meter colours (Beszel defaults)
@@ -283,6 +283,36 @@ class BeszelMachineCard extends HTMLElement {
     this._render();
   }
 
+  // Home Assistant sets these while the dashboard is being edited (`editMode`
+  // on older frontends). An offline card stays visible there so it can still
+  // be selected and configured.
+  set preview(value) { this._setPreview(value); }
+  get preview() { return this._preview === true; }
+  set editMode(value) { this._setPreview(value); }
+  get editMode() { return this._preview === true; }
+
+  _setPreview(value) {
+    const preview = value === true;
+    if (preview === (this._preview === true)) return;
+    this._preview = preview;
+    this._render();
+  }
+
+  // Same contract as Home Assistant's conditional card: flag the element as
+  // hidden and announce it, so the dashboard collapses the slot instead of
+  // leaving an empty gap.
+  _setHidden(hidden) {
+    if (hidden === (this._hidden === true)) return;
+    this._hidden = hidden;
+    this.hidden = hidden;
+    if (this.style) this.style.display = hidden ? 'none' : '';
+    this.dispatchEvent(new CustomEvent('card-visibility-changed', {
+      detail: { value: !hidden },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
   getCardSize() { return this._layout() === 'detailed' ? 7 : 4; }
 
   // New configs use `layout`. Legacy `view: compact` was the icon list, which
@@ -383,17 +413,21 @@ class BeszelMachineCard extends HTMLElement {
 
   _render() {
     if (!this._hass || !this._config) return;
-    if (this._config.style === 'terminal') {
-      this._renderTerminal();
-      return;
-    }
     const c = this._config;
     const { entities, deviceId } = this._entities();
     const model = buildSystemModel(this._hass, entities);
+    const offline = c.hide_when_offline === true && model.statusClass === 'down';
+    const hidden = offline && this._preview !== true;
+    if (hidden) this.shadowRoot.innerHTML = '';
+    this._setHidden(hidden);
+    if (hidden) return;
+    if (c.style === 'terminal') {
+      this._renderTerminal(model, offline);
+      return;
+    }
     const limits = thresholds(c);
     const layout = this._layout();
     const name = c.title || c.device_name || deviceName(this._hass, deviceId) || c.device || 'Beszel machine';
-    const offline = c.hide_when_offline === true && model.statusClass === 'down';
     const hubDown = c.show_hub_status === true && hubConnectionDown(this._hass);
     const warning = hubDown
       ? '<div class="hub-warning">Beszel Hub is unreachable. Displayed values may be stale.</div>'
@@ -434,7 +468,7 @@ class BeszelMachineCard extends HTMLElement {
         ${statusLabel ? `<div class="status ${model.statusClass}"><span class="bz-dot bz-${meterLevelForStatus(model.statusClass)}"></span>${escapeHtml(statusLabel)}</div>` : ''}
         ${uptime ? `<div class="uptime">↑ ${escapeHtml(uptime)}</div>` : ''}
       </div></div>`;
-    if (offline) return `${header}${warning}<div class="offline">System offline</div>`;
+    if (offline) return `${header}${warning}<div class="offline">${OFFLINE_NOTE}</div>`;
 
     const memorySub = [
       formatUsedTotal(model.memoryUsed, model.memoryTotal),
@@ -480,7 +514,7 @@ class BeszelMachineCard extends HTMLElement {
       : '';
     const head = `<div class="bz-head"><span class="bz-dot bz-${meterLevelForStatus(model.statusClass)}"></span><span class="bz-name">${escapeHtml(name)}</span>${menu}</div>`;
     const rows = offline
-      ? '<div class="offline">System offline</div>'
+      ? `<div class="offline">${OFFLINE_NOTE}</div>`
       : renderDetailRows(model, {
         limits,
         showEmpty: c.show_empty_rows === true,
@@ -491,12 +525,9 @@ class BeszelMachineCard extends HTMLElement {
     return `${head}<div class="bz-body">${warning}${rows}${footer}</div>`;
   }
 
-  _renderTerminal() {
+  _renderTerminal(model, offline) {
     const c = this._config;
-    const { entities } = this._entities();
-    const model = buildSystemModel(this._hass, entities);
     const title = c.title || c.device_name || deviceName(this._hass, this._entities().deviceId) || c.device || 'machine';
-    const offline = c.hide_when_offline === true && model.statusClass === 'down';
     const statusMark = model.statusClass === 'up' ? 'OK' : model.statusClass === 'pending' ? '..' : '!!';
     const pct = value => (Number.isFinite(value) ? `${value.toFixed(1)}%` : '');
     // Rows without a selected, valid reading are skipped entirely.
@@ -508,7 +539,7 @@ class BeszelMachineCard extends HTMLElement {
 
     let rows = '';
     if (offline) {
-      rows = '<tr><td colspan="3" class="off">system offline</td></tr>';
+      rows = '<tr><td colspan="3" class="off">system offline (hidden outside edit mode)</td></tr>';
     } else {
       rows += line('cpu', asciiBar(model.cpu), pct(model.cpu));
       rows += line('mem', asciiBar(model.memory), pct(model.memory));
@@ -570,6 +601,9 @@ class BeszelMachineCard extends HTMLElement {
     };
   }
 }
+
+// Only ever drawn in edit mode; on the dashboard an offline card is hidden.
+const OFFLINE_NOTE = 'System offline — hidden outside edit mode';
 
 function meterLevelForStatus(statusClassName) {
   return { up: 'ok', pending: 'warn', down: 'crit', unknown: 'none' }[statusClassName] || 'none';
@@ -1099,7 +1133,7 @@ class BeszelMachineCardEditor extends HTMLElement {
           <input type="text" id="subtitle" data-key="subtitle" autocomplete="off">
         </label>
 
-        <ha-formfield label="Hide metrics while the system is offline">
+        <ha-formfield label="Hide the card while the system is offline">
           <ha-checkbox id="hide-when-offline"></ha-checkbox>
         </ha-formfield>
         <label class="entity-field">
