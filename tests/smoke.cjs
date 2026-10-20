@@ -520,7 +520,9 @@ assert.equal(tableCard.getCardSize(), 2);
 hass.states['sensor.srv_status'].state = 'down';
 tableCard.hass = hass;
 assert.doesNotMatch(tableCard.shadowRoot.innerHTML, /data-device="srv"/, 'offline systems are hidden even with hide_when_offline off');
-assert.match(tableCard.shadowRoot.innerHTML, /No systems with alerts\./);
+assert.equal(tableCard.hidden, true, 'no alerts hides the whole card');
+assert.equal(tableCard.shadowRoot.innerHTML, '', 'no "no alerts" message is left behind');
+assert.equal(tableCard.getCardSize(), 0);
 // Each indicator counts on its own: status pending, temperature, battery, load, GPU.
 for (const [label, mutate] of [
   ['pending status', h => { h.states['sensor.nas_status'].state = 'pending'; }],
@@ -554,8 +556,68 @@ hass.states['sensor.srv_services_failed'].state = '0';
 hass.states['sensor.srv_load_1m'].state = '0.5';
 tableCard.setConfig({ title: 'T', style: 'terminal', only_alerts: true, columns: ['cpu'] });
 tableCard.hass = hass;
-assert.match(tableCard.shadowRoot.innerHTML, /no alerts/);
+assert.equal(tableCard.hidden, true, 'terminal style hides with no alerts too');
+assert.equal(tableCard.shadowRoot.innerHTML, '');
+tableCard.preview = true;
+assert.match(tableCard.shadowRoot.innerHTML, /no alerts \(hidden outside edit mode\)/);
+tableCard.preview = false;
 assert.match(tableSource, /Show only systems with alerts/);
+
+// Hiding follows HA's conditional-card contract and stays editable.
+const alertCard = new table.TableCardUnderTest();
+const tableVisibility = [];
+alertCard.dispatchEvent = event => { if (event.type === 'card-visibility-changed') tableVisibility.push(event.detail.value); };
+const calmHass = () => {
+  const h = tableHass();
+  h.states['sensor.srv_memory_usage'].state = '10';
+  h.states['sensor.srv_services_failed'].state = '0';
+  h.states['sensor.srv_load_1m'].state = '0.5';
+  return h;
+};
+alertCard.setConfig({ title: 'Alerts', layout: 'table', only_alerts: true });
+assert.notEqual(alertCard.hidden, true, 'not hidden before hass arrives');
+alertCard.hass = calmHass();
+assert.equal(alertCard.hidden, true);
+assert.deepEqual(tableVisibility, [false]);
+alertCard.hass = { ...calmHass(), states: { ...calmHass().states, 'sensor.nas_cpu_usage': { state: '1', attributes: {} } } };
+assert.deepEqual(tableVisibility, [false], 'staying calm does not re-announce');
+alertCard.editMode = true;
+assert.equal(alertCard.hidden, false, 'edit mode keeps the card selectable');
+assert.match(alertCard.shadowRoot.innerHTML, /No systems with alerts \(card hidden outside edit mode\)/);
+alertCard.preview = false;
+assert.equal(alertCard.hidden, true);
+// An alert appears: the card comes back with just that system.
+const hot = calmHass();
+hot.states['sensor.nas_cpu_usage'].state = '95';
+alertCard.hass = hot;
+assert.equal(alertCard.hidden, false);
+assert.match(alertCard.shadowRoot.innerHTML, /data-device="nas"/);
+assert.doesNotMatch(alertCard.shadowRoot.innerHTML, /data-device="srv"/);
+assert.deepEqual(tableVisibility, [false, true, false, true]);
+// Grid layout shares the filter.
+alertCard.setConfig({ title: 'Alerts', layout: 'grid', only_alerts: true });
+assert.match(alertCard.shadowRoot.innerHTML, /class="grid-card"[\s\S]*>nas</);
+alertCard.hass = calmHass();
+assert.equal(alertCard.hidden, true);
+// A Hub outage is itself worth seeing: the card stays with the warning.
+const hubOff = calmHass();
+hubOff.states['binary_sensor.beszel_hub_connection'].state = 'off';
+alertCard.hass = hubOff;
+assert.equal(alertCard.hidden, false);
+assert.match(alertCard.shadowRoot.innerHTML, /Beszel Hub is unreachable/);
+// No Beszel devices at all is a setup problem, not "no alerts".
+alertCard.hass = { states: {}, entities: {}, devices: {}, user: { is_admin: true } };
+assert.equal(alertCard.hidden, false);
+assert.match(alertCard.shadowRoot.innerHTML, /No Beszel system devices were found/);
+// Turning the option off brings back the all-systems view.
+alertCard.setConfig({ title: 'All', layout: 'table' });
+alertCard.hass = calmHass();
+assert.equal(alertCard.hidden, false);
+assert.match(alertCard.shadowRoot.innerHTML, /data-device="srv"[\s\S]*data-device="nas"|data-device="nas"[\s\S]*data-device="srv"/);
+// Selected systems narrow the alert filter.
+alertCard.setConfig({ title: 'Alerts', layout: 'table', only_alerts: true, system_ids: ['srv'] });
+alertCard.hass = hot;
+assert.equal(alertCard.hidden, true, 'nas alert is outside the selection');
 tableCard.setConfig({ title: 'Table', layout: 'table' });
 
 // Hub warning.
@@ -606,5 +668,92 @@ assert.match(tableSource, /_syncColumnCheckboxes/);
 assert.match(tableSource, /Hide offline systems/);
 assert.match(tableSource, /Terminal style/);
 assert.match(tableSource, /Beszel Agent Systems Table/);
+// ─── Systems table editor ────────────────────────────────────────────────────
+function editorRoot() {
+  const nodes = new Map();
+  const node = id => {
+    if (!nodes.has(id)) nodes.set(id, { id, value: '', checked: false, disabled: false, dataset: {}, listeners: {}, addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }, focus() {}, setSelectionRange() {} });
+    return nodes.get(id);
+  };
+  const root = {
+    nodes,
+    _html: '',
+    get innerHTML() { return this._html; },
+    set innerHTML(value) {
+      this._html = value;
+      nodes.clear();
+      for (const [, attr, val] of value.matchAll(/data-(system-id|column)="([^"]+)"/g)) {
+        const box = node(`${attr}:${val}`);
+        box.dataset[attr === 'column' ? 'column' : 'systemId'] = val;
+      }
+    },
+    getElementById: id => node(id),
+    querySelector: selector => {
+      if (selector === '.editor') return root._html.includes('class="editor"') ? {} : null;
+      const match = selector.match(/^\[data-(system-id|column)="([^"]+)"\]$/);
+      return match ? nodes.get(`${match[1]}:${match[2]}`) || null : null;
+    },
+    querySelectorAll: selector => {
+      const prefix = selector === '[data-system-id]' ? 'system-id:' : selector === '[data-column]' ? 'column:' : null;
+      return prefix ? [...nodes.entries()].filter(([key]) => key.startsWith(prefix)).map(([, value]) => value) : [];
+    },
+  };
+  return root;
+}
+const tableEditor = new table.TableEditorUnderTest();
+tableEditor.shadowRoot = editorRoot();
+const editorEvents = [];
+tableEditor.dispatchEvent = event => editorEvents.push(event.detail.config);
+tableEditor.setConfig({ title: 'Homelab' });
+tableEditor.hass = tableHass();
+const ed = tableEditor.shadowRoot;
+const editorHtml = ed.innerHTML;
+// Every setup option is present.
+for (const id of ['title', 'layout', 'hub-status', 'hide-offline', 'only-alerts', 'hide-empty-columns', 'split-network', 'terminal-style', 'systems', 'columns']) {
+  assert.match(editorHtml, new RegExp(`id="${id}"`), `editor has #${id}`);
+}
+assert.match(editorHtml, /Show only systems with alerts \(hide the card when none\)/);
+assert.match(editorHtml, /data-system-id="srv"/);
+assert.match(editorHtml, /data-system-id="nas"/);
+assert.doesNotMatch(editorHtml, /<script>alert/, 'system names are escaped in the editor');
+assert.equal(ed.getElementById('title').value, 'Homelab');
+assert.equal(ed.getElementById('layout').value, 'auto');
+assert.equal(ed.getElementById('hub-status').checked, true);
+assert.equal(ed.getElementById('hide-offline').checked, true);
+assert.equal(ed.getElementById('only-alerts').checked, false, 'only_alerts defaults off');
+assert.equal(ed.getElementById('hide-offline').disabled, false);
+assert.equal(ed.getElementById('hide-empty-columns').checked, true);
+assert.equal(ed.getElementById('split-network').checked, false);
+assert.equal(ed.getElementById('terminal-style').checked, false);
+assert.equal(ed.querySelector('[data-column="cpu"]').checked, true);
+assert.equal(ed.querySelector('[data-column="memory_total"]').checked, false);
+// Toggling only_alerts emits it and disables the redundant offline toggle.
+const onlyAlerts = ed.getElementById('only-alerts');
+onlyAlerts.checked = true;
+onlyAlerts.listeners.change.forEach(fn => fn());
+assert.equal(editorEvents.at(-1).only_alerts, true);
+tableEditor.setConfig(editorEvents.at(-1));
+assert.equal(ed.getElementById('only-alerts').checked, true);
+assert.equal(ed.getElementById('hide-offline').disabled, true);
+// Default-on options are stored as explicit false.
+const hideOffline = ed.getElementById('hide-offline');
+hideOffline.checked = false;
+hideOffline.listeners.change.forEach(fn => fn());
+assert.equal(editorEvents.at(-1).hide_when_offline, false);
+// Unchecking systems narrows system_ids; the last one cannot be unchecked.
+tableEditor.setConfig({ title: 'Homelab' });
+const srvBox = ed.querySelector('[data-system-id="srv"]');
+srvBox.checked = false;
+srvBox.listeners.change.forEach(fn => fn());
+assert.deepEqual([...editorEvents.at(-1).system_ids], ['nas']);
+tableEditor.setConfig(editorEvents.at(-1));
+const eventCount = editorEvents.length;
+const nasBox = ed.querySelector('[data-system-id="nas"]');
+nasBox.checked = false;
+nasBox.listeners.change.forEach(fn => fn());
+assert.equal(editorEvents.length, eventCount, 'unchecking the last system emits nothing');
+assert.equal(nasBox.checked, true, 'the last system stays checked');
+console.log('Systems table editor tests passed.');
+
 assert.doesNotMatch(tableSource, /callWS|beszel-overview-card|Beszel Overview \(legacy\)/);
 console.log('Beszel Agent Systems Table smoke tests passed.');

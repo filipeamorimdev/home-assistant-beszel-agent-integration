@@ -96,7 +96,7 @@ Or use the grid layout, which suits phones and narrow columns:
 
 - Click a header to sort; click a row to open the device page.
 - Offline machines stay in the list with blank metrics, so a machine that stops reporting is obvious. **Hide offline systems** removes them.
-- **Show only systems with alerts** (`only_alerts: true`) keeps just the machines with an amber or red indicator — CPU, memory, disk, GPU or load over the warning threshold, hot CPU, low battery, a failed service, or a pending status. All-green and offline machines are hidden.
+- **Show only systems with alerts** (`only_alerts: true`) keeps just the machines with an amber or red indicator — CPU, memory, disk, GPU or load over the warning threshold, hot CPU, low battery, a failed service, or a pending status. All-green and offline machines are hidden, and when no machine has an alert the whole card is hidden (like a conditional card). It stays visible in dashboard edit mode, while the Hub warning is shown, and when no Beszel systems exist at all.
 - Columns that no machine reports are hidden automatically.
 
 ```yaml

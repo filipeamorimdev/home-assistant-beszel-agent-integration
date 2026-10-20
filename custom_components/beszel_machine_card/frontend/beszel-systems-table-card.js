@@ -204,7 +204,48 @@ class BeszelSystemsTableCard extends HTMLElement {
     this._observer = null;
   }
 
+  // Home Assistant sets these while the dashboard is being edited (`editMode`
+  // on older frontends). A card hidden by only_alerts stays visible there so
+  // it can still be selected and configured.
+  set preview(value) { this._setPreview(value); }
+  get preview() { return this._preview === true; }
+  set editMode(value) { this._setPreview(value); }
+  get editMode() { return this._preview === true; }
+
+  _setPreview(value) {
+    const preview = value === true;
+    if (preview === (this._preview === true)) return;
+    this._preview = preview;
+    this._render();
+  }
+
+  // Same contract as Home Assistant's conditional card: flag the element as
+  // hidden and announce it, so the dashboard collapses the slot.
+  _setHidden(hidden) {
+    if (hidden === (this._hidden === true)) return;
+    this._hidden = hidden;
+    this.hidden = hidden;
+    if (this.style) this.style.display = hidden ? 'none' : '';
+    this.dispatchEvent(new CustomEvent('card-visibility-changed', {
+      detail: { value: !hidden },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  // only_alerts with nothing to report collapses the card. It stays while
+  // systems are still being discovered, when none exist at all (a setup
+  // problem worth seeing), and while the Hub warning is shown.
+  _noAlerts(systems, hubDown) {
+    return pick(this._config, 'only_alerts') === true
+      && this._registryLoaded === true
+      && (this._systems || []).length > 0
+      && !systems.length
+      && !hubDown;
+  }
+
   getCardSize() {
+    if (this._hidden === true) return 0;
     return Math.max(2, 1 + this._visibleSystems().length);
   }
 
@@ -376,6 +417,11 @@ class BeszelSystemsTableCard extends HTMLElement {
     const systems = this._visibleSystems();
     const hubDown = c.show_hub_status !== false && hubConnectionDown(this._hass);
     const hideOffline = c.hide_when_offline !== false;
+    const noAlerts = this._noAlerts(systems, hubDown);
+    const hidden = noAlerts && this._preview !== true;
+    if (hidden) this.shadowRoot.innerHTML = '';
+    this._setHidden(hidden);
+    if (hidden) return;
     const rows = this._sortedRows(systems.map(system => ({ system, model: this._model(system) })));
 
     let body;
@@ -384,8 +430,8 @@ class BeszelSystemsTableCard extends HTMLElement {
         ? '<div class="empty">Discovering Beszel systems…</div>'
         : !(this._systems || []).length
           ? '<div class="empty">No Beszel system devices were found.</div>'
-          : c.only_alerts === true
-            ? '<div class="empty">No systems with alerts.</div>'
+          : noAlerts
+            ? '<div class="empty">No systems with alerts (card hidden outside edit mode).</div>'
             : '<div class="empty">All matched systems are offline.</div>';
     } else if (this._layout() === 'grid') {
       body = `<div class="grid">${rows.map(({ system, model }) => `
@@ -476,13 +522,18 @@ class BeszelSystemsTableCard extends HTMLElement {
       const columns = this._columns();
       const systems = this._visibleSystems();
       const hubDown = this._config.show_hub_status !== false && hubConnectionDown(this._hass);
+      const noAlerts = this._noAlerts(systems, hubDown);
+      const hidden = noAlerts && this._preview !== true;
+      if (hidden) this.shadowRoot.innerHTML = '';
+      this._setHidden(hidden);
+      if (hidden) return;
       const lines = [];
       if (this._config.title) lines.push(`# ${String(this._config.title)}`);
       if (hubDown) lines.push('! hub unreachable');
       if (!this._registryLoaded) {
         lines.push('loading...');
       } else if (!systems.length) {
-        lines.push(!(this._systems || []).length ? 'no systems' : this._config.only_alerts === true ? 'no alerts' : 'all offline');
+        lines.push(!(this._systems || []).length ? 'no systems' : noAlerts ? 'no alerts (hidden outside edit mode)' : 'all offline');
       } else {
         for (const system of systems) {
           const model = this._model(system);
@@ -567,6 +618,13 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
     const selected = new Set(pick(this._config.system_ids, 'length') ? this._config.system_ids : all);
     if (checked) selected.add(id); else selected.delete(id);
     const next = all.filter(systemId => selected.has(systemId));
+    // An empty system_ids means "all systems", so unchecking the last one
+    // would silently select everything. Keep it checked instead.
+    if (!next.length) {
+      const box = this.shadowRoot.querySelector(`[data-system-id="${id}"]`);
+      if (box) box.checked = true;
+      return;
+    }
     this._emit({ system_ids: next.length === all.length ? [] : next });
   }
 
@@ -626,7 +684,7 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
         </label>
         <ha-formfield label="Show Hub connection warning"><ha-checkbox id="hub-status"></ha-checkbox></ha-formfield>
         <ha-formfield label="Hide offline systems"><ha-checkbox id="hide-offline"></ha-checkbox></ha-formfield>
-        <ha-formfield label="Show only systems with alerts (hide all-green and offline)"><ha-checkbox id="only-alerts"></ha-checkbox></ha-formfield>
+        <ha-formfield label="Show only systems with alerts (hide the card when none)"><ha-checkbox id="only-alerts"></ha-checkbox></ha-formfield>
         <ha-formfield label="Hide columns no system reports"><ha-checkbox id="hide-empty-columns"></ha-checkbox></ha-formfield>
         <ha-formfield label="Split network into ↓ / ↑"><ha-checkbox id="split-network"></ha-checkbox></ha-formfield>
         <ha-formfield label="Terminal style (plain monospace layout)"><ha-checkbox id="terminal-style"></ha-checkbox></ha-formfield>
@@ -657,6 +715,11 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
     bind('hub-status', 'show_hub_status', true);
     bind('hide-offline', 'hide_when_offline', true);
     bind('only-alerts', 'only_alerts', false);
+    // only_alerts always drops offline systems, so the offline toggle is moot.
+    const onlyAlertsBox = this.shadowRoot.getElementById('only-alerts');
+    const syncHideOffline = () => { this.shadowRoot.getElementById('hide-offline').disabled = onlyAlertsBox.checked; };
+    syncHideOffline();
+    onlyAlertsBox.addEventListener('change', syncHideOffline);
     bind('hide-empty-columns', 'hide_empty_columns', true);
     bind('split-network', 'split_network', false);
     const terminalStyle = this.shadowRoot.getElementById('terminal-style');

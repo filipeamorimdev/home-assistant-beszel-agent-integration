@@ -6,7 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Systems table: **Show only systems with alerts** (`only_alerts`) hides all-green and offline machines, keeping only those with a warning or critical indicator.
+- Systems table: **Show only systems with alerts** (`only_alerts`) hides all-green and offline machines, keeping only those with a warning or critical indicator. When no system has an alert the whole card is hidden (still visible in edit mode).
+
+### Fixed
+- Systems table editor: unchecking the last selected system no longer silently selects all systems.
 - Systems table: the Temp column now shows the same colour dot as the machine card.
 
 ### Changed
