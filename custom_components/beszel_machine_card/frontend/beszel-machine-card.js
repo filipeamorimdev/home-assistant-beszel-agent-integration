@@ -53,7 +53,7 @@ import {
   temperatureLevel,
   thresholds,
   validReading,
-} from './beszel-common.js?v=0.2.0';
+} from './beszel-common.js?v=0.1.2';
 
 // ─── Sensor discovery heuristics ────────────────────────────────────────────
 // For each slot, we try a list of patterns (ordered by confidence).
