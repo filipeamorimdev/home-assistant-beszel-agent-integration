@@ -11,8 +11,14 @@ from typing import Any
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import BeszelApiClient, BeszelApiError, BeszelAuthError
-from .const import DOMAIN, FALLBACK_POLL_INTERVAL
+from .api import (
+    EXTRA_COLLECTIONS,
+    POLLED_COLLECTIONS,
+    BeszelApiClient,
+    BeszelApiError,
+    BeszelAuthError,
+)
+from .const import DOMAIN, EXTRAS_POLL_INTERVAL, FALLBACK_POLL_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,6 +104,41 @@ class BeszelDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             finally:
                 self._realtime_activity.clear()
 
+    async def async_poll_extras(self) -> None:
+        """Refresh collections the Hub updates without realtime events."""
+        while True:
+            await asyncio.sleep(EXTRAS_POLL_INTERVAL)
+            if not self.data:
+                continue
+            try:
+                extras = await self.client.async_get_extras(POLLED_COLLECTIONS)
+            except asyncio.CancelledError:
+                raise
+            except BeszelApiError as err:
+                # Auth problems surface through the main refresh/token loop.
+                _LOGGER.debug("Beszel extras poll failed: %s", err)
+                continue
+            self.apply_extras(extras)
+
+    def apply_extras(
+        self, extras: Mapping[str, Mapping[str, Mapping[str, Any]]]
+    ) -> None:
+        """Merge freshly fetched collections; only changed systems get new items."""
+        if not extras or not self.data:
+            return
+        updated = dict(self.data)
+        changed = False
+        for collection, grouped in extras.items():
+            key = EXTRA_COLLECTIONS[collection][0]
+            for system_id, item in self.data.items():
+                records = dict(grouped.get(system_id, {}))
+                if item.get(key) == records:
+                    continue
+                updated[system_id] = {**updated[system_id], key: records}
+                changed = True
+        if changed:
+            self.async_set_updated_data(updated)
+
     def _handle_realtime_event(self, topic: str, payload: Mapping[str, Any]) -> None:
         """Apply a systems or system_stats event without another HTTP call."""
         action = payload.get("action")
@@ -148,6 +189,23 @@ class BeszelDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                 "stats": dict(stats),
                 "stats_created": created,
             }
+        elif topic.split("/", 1)[0] in EXTRA_COLLECTIONS:
+            key, field = EXTRA_COLLECTIONS[topic.split("/", 1)[0]]
+            system_id = record.get("system")
+            record_key = record.get(field)
+            if (
+                not isinstance(system_id, str)
+                or system_id not in updated
+                or not isinstance(record_key, str)
+                or not record_key
+            ):
+                return
+            records = dict(updated[system_id].get(key) or {})
+            if action == "delete":
+                records.pop(record_key, None)
+            else:
+                records[record_key] = dict(record)
+            updated[system_id] = {**updated[system_id], key: records}
         elif topic.startswith("system_details/"):
             system_id = record.get("system")
             if not isinstance(system_id, str) or system_id not in updated:

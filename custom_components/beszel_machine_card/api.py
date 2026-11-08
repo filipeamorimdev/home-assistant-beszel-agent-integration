@@ -13,12 +13,48 @@ from urllib.parse import quote
 import aiohttp
 
 
+# Per-system Beszel collections a normal user can read, mapped to the key the
+# record is stored under in each system's data and the field that keeps it
+# stable. Containers and services key by name because Docker IDs change on
+# every recreate.
+EXTRA_COLLECTIONS: dict[str, tuple[str, str]] = {
+    "smart_devices": ("smart", "id"),
+    "zfs_pools": ("zfs", "name"),
+    "containers": ("containers", "name"),
+    "systemd_services": ("services", "name"),
+    "network_monitors": ("monitors", "id"),
+    "alerts": ("alerts", "name"),
+}
+# The Hub writes these with raw SQL every minute, so PocketBase never
+# broadcasts realtime events for them; they are polled instead.
+POLLED_COLLECTIONS = ("containers", "systemd_services", "network_monitors")
+REALTIME_EXTRA_COLLECTIONS = ("smart_devices", "zfs_pools", "alerts")
+
+
+def group_extra_records(
+    collection: str, records: list[dict[str, Any]]
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Group one collection's records by system, then by their stable key."""
+    _, field = EXTRA_COLLECTIONS[collection]
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    for record in records:
+        system_id = record.get("system")
+        key = record.get(field)
+        if isinstance(system_id, str) and system_id and isinstance(key, str) and key:
+            grouped.setdefault(system_id, {})[key] = record
+    return grouped
+
+
 class BeszelApiError(Exception):
     """Base exception raised by the Beszel API client."""
 
 
 class BeszelAuthError(BeszelApiError):
     """Raised when Beszel rejects the supplied access token."""
+
+
+class BeszelUnavailableError(BeszelApiError):
+    """Raised when an optional collection is missing or not readable."""
 
 
 class BeszelApiClient:
@@ -34,6 +70,8 @@ class BeszelApiClient:
         self.base_url = base_url.rstrip("/")
         self._token = token.strip() if token else None
         self._details_available = True
+        # Older Hubs lack some collections; skip them instead of failing.
+        self._extras_available = dict.fromkeys(EXTRA_COLLECTIONS, True)
 
     async def async_check_hub(self) -> None:
         """Confirm the Hub answers unauthenticated API requests."""
@@ -105,7 +143,9 @@ class BeszelApiClient:
             auth_not_found=True,
         )
 
-    async def _async_records(self, collection: str) -> list[dict[str, Any]]:
+    async def _async_records(
+        self, collection: str, *, optional: bool = False
+    ) -> list[dict[str, Any]]:
         """Read all pages, including installations with more than 500 systems."""
         records = []
         page = 1
@@ -114,6 +154,7 @@ class BeszelApiClient:
                 "GET",
                 f"/api/collections/{collection}/records",
                 params={"page": page, "perPage": 500, "sort": "id"},
+                optional=optional,
             )
             records.extend(self._items(payload))
             if page >= payload.get("totalPages", 1):
@@ -185,16 +226,48 @@ class BeszelApiClient:
             if isinstance(record.get("system"), str)
         }
 
+    async def async_get_extras(
+        self, collections: tuple[str, ...] | None = None
+    ) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
+        """Fetch per-system collections; a failed one is left out of the result.
+
+        Returns ``{collection: {system_id: {stable_key: record}}}``. A missing
+        collection (older Hub) is remembered and not requested again until the
+        integration reloads.
+        """
+        names = [
+            name
+            for name in (collections or tuple(EXTRA_COLLECTIONS))
+            if self._extras_available.get(name)
+        ]
+
+        async def fetch(name: str):
+            try:
+                records = await self._async_records(name, optional=True)
+            except BeszelUnavailableError:
+                self._extras_available[name] = False
+                return name, None
+            except BeszelAuthError:
+                raise
+            except BeszelApiError:
+                return name, None
+            return name, group_extra_records(name, records)
+
+        results = await asyncio.gather(*(fetch(name) for name in names))
+        return {name: grouped for name, grouped in results if grouped is not None}
+
     async def async_get_data(self) -> dict[str, dict[str, Any]]:
-        """Fetch systems, one latest sample per host, and hardware metadata."""
+        """Fetch systems, one latest sample per host, metadata and extras."""
         systems = await self.async_get_systems()
         system_ids = [
             record["id"]
             for record in systems
             if isinstance(record.get("id"), str) and record["id"]
         ]
-        latest_stats, details = await asyncio.gather(
-            self.async_get_latest_stats(system_ids), self._async_get_details()
+        latest_stats, details, extras = await asyncio.gather(
+            self.async_get_latest_stats(system_ids),
+            self._async_get_details(),
+            self.async_get_extras(),
         )
         result = {}
         for record in systems:
@@ -209,6 +282,10 @@ class BeszelApiClient:
                 "stats_created": latest_stats.get(system_id, {}).get("created"),
                 "details": details.get(system_id, {}),
             }
+            for collection, grouped in extras.items():
+                result[system_id][EXTRA_COLLECTIONS[collection][0]] = grouped.get(
+                    system_id, {}
+                )
         return result
 
     async def async_listen_realtime(
@@ -246,7 +323,12 @@ class BeszelApiClient:
                         await self._async_set_realtime_subscriptions(
                             client_id,
                             ["systems/*", "system_stats/*"]
-                            + (["system_details/*"] if self._details_available else []),
+                            + (["system_details/*"] if self._details_available else [])
+                            + [
+                                f"{name}/*"
+                                for name in REALTIME_EXTRA_COLLECTIONS
+                                if self._extras_available.get(name)
+                            ],
                         )
                         subscribed = True
                         connected = True
@@ -301,6 +383,7 @@ class BeszelApiClient:
         *,
         params: Mapping[str, Any] | None = None,
         auth_not_found: bool = False,
+        optional: bool = False,
     ) -> Any:
         if not self._token:
             raise BeszelAuthError("No Beszel access token is available")
@@ -316,6 +399,10 @@ class BeszelApiClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise BeszelApiError(f"Unable to connect to Beszel: {err}") from err
 
+        # A collection that is missing (older Hub) or superuser-only answers
+        # 404/403 even for a valid user session; that is not an auth failure.
+        if optional and response.status in (403, 404):
+            raise BeszelUnavailableError(self._message(payload, response.status))
         if response.status in (401, 403) or (auth_not_found and response.status == 404):
             raise BeszelAuthError("Beszel access token is invalid, expired, or denied")
         if response.status >= 400:

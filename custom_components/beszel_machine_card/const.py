@@ -13,7 +13,9 @@ CONF_AUTH_METHOD = "auth_method"
 AUTH_METHOD_PASSWORD = "password"
 
 FALLBACK_POLL_INTERVAL = 5 * 60
+# Containers, services and monitors never produce realtime events.
+EXTRAS_POLL_INTERVAL = 60
 
 CARD_URL = "/beszel_machine_card/beszel-machine-card.js"
 TABLE_CARD_URL = "/beszel_machine_card/beszel-systems-table-card.js"
-CARD_VERSION = "0.1.0"
+CARD_VERSION = "0.2.0"

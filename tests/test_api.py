@@ -304,7 +304,14 @@ class BeszelApiClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.subscription["json"]["clientId"], "client-1")
         self.assertEqual(
             session.subscription["json"]["subscriptions"],
-            ["systems/*", "system_stats/*", "system_details/*"],
+            [
+                "systems/*",
+                "system_stats/*",
+                "system_details/*",
+                "smart_devices/*",
+                "zfs_pools/*",
+                "alerts/*",
+            ],
         )
         self.assertEqual(
             session.subscription["headers"]["Authorization"], "token-value"
@@ -361,6 +368,67 @@ class ExpandedApiTests(unittest.IsolatedAsyncioTestCase):
         ).async_get_data()
         self.assertEqual(result["system1"]["stats"]["cpu"], 9.5)
         self.assertEqual(result["system1"]["details"], {})
+
+    async def test_extras_grouped_by_system_and_stable_key(self):
+        class Session(FakeSession):
+            def request(self, method, url, **kwargs):
+                if url.endswith("/smart_devices/records"):
+                    self.requests.append((method, url, kwargs))
+                    return FakeResponse(
+                        200,
+                        {
+                            "items": [
+                                {"id": "d1", "system": "system1", "state": "PASSED"},
+                                {"id": "d2", "system": "other", "state": "FAILED"},
+                                {"system": "system1"},  # no stable key: ignored
+                            ]
+                        },
+                    )
+                if url.endswith("/containers/records"):
+                    self.requests.append((method, url, kwargs))
+                    return FakeResponse(
+                        200,
+                        {"items": [{"id": "abc123", "system": "system1", "name": "web"}]},
+                    )
+                return super().request(method, url, **kwargs)
+
+        result = await API.BeszelApiClient(
+            Session(), "http://beszel.test", make_token()
+        ).async_get_data()
+        self.assertEqual(list(result["system1"]["smart"]), ["d1"])
+        self.assertEqual(result["system1"]["containers"]["web"]["id"], "abc123")
+
+    async def test_unreadable_collection_is_skipped_not_reauth(self):
+        class Session(FakeSession):
+            def request(self, method, url, **kwargs):
+                if url.endswith("/smart_devices/records"):
+                    self.requests.append((method, url, kwargs))
+                    return FakeResponse(403, {"message": "Only superusers"})
+                if url.endswith("/zfs_pools/records"):
+                    return FakeResponse(404, {"message": "Missing collection"})
+                return super().request(method, url, **kwargs)
+
+        session = Session()
+        client = API.BeszelApiClient(session, "http://beszel.test", make_token())
+        result = await client.async_get_data()
+        self.assertEqual(result["system1"]["stats"]["cpu"], 9.5)
+        self.assertNotIn("smart", result["system1"])
+        self.assertNotIn("zfs", result["system1"])
+        before = len(session.requests)
+        await client.async_get_extras(("smart_devices",))
+        self.assertEqual(len(session.requests), before)  # not asked again
+
+    async def test_core_403_still_requires_reauth(self):
+        class Session(FakeSession):
+            def request(self, method, url, **kwargs):
+                if url.endswith("/systems/records"):
+                    return FakeResponse(403, {})
+                return super().request(method, url, **kwargs)
+
+        with self.assertRaises(API.BeszelAuthError):
+            await API.BeszelApiClient(
+                Session(), "http://beszel.test", make_token()
+            ).async_get_data()
 
     async def test_per_host_failure_does_not_drop_other_hosts(self):
         class Client(API.BeszelApiClient):

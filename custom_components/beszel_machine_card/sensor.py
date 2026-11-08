@@ -110,6 +110,8 @@ class BeszelSensorDescription(SensorEntityDescription):
     """Description plus a value extractor for a Beszel record."""
 
     value_fn: Callable[[Mapping[str, Any]], Any]
+    # False keeps the value while the machine is offline (e.g. alert counts).
+    live: bool = True
 
 
 SENSORS = (
@@ -261,26 +263,30 @@ async def async_setup_entry(
             previous_items[system_id] = item
             descriptions = list(SENSORS)
             for metric in metrics(item):
+                if metric.binary or (system_id, metric.key) in known:
+                    continue
                 if metric.value(item) is None:
                     continue
                 descriptions.append(
                     BeszelSensorDescription(
                         key=metric.key,
                         name=metric.name,
+                        icon=metric.icon,
                         native_unit_of_measurement=metric.unit,
                         device_class=metric.device_class,
                         state_class=(
                             SensorStateClass.TOTAL_INCREASING
                             if metric.counter
                             else SensorStateClass.MEASUREMENT
-                            if metric.operation != "text"
+                            if metric.operation not in ("text", "timestamp")
                             else None
                         ),
                         entity_registry_enabled_default=metric.enabled,
                         entity_category=EntityCategory.DIAGNOSTIC
-                        if metric.key.startswith("system_")
+                        if metric.diagnostic or metric.key.startswith("system_")
                         else None,
                         value_fn=metric.value,
+                        live=metric.live,
                     )
                 )
             for description in descriptions:
@@ -296,6 +302,22 @@ async def async_setup_entry(
 
     _async_add_new_systems()
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new_systems))
+
+
+def system_device_info(
+    entry: ConfigEntry, system_id: str, item: Mapping[str, Any]
+) -> DeviceInfo:
+    """Device shared by every entity of one Beszel system."""
+    record = item.get("record", {})
+    info = item.get("info", {})
+    return DeviceInfo(
+        identifiers={(DOMAIN, system_id)},
+        name=record.get("name") or system_id,
+        manufacturer="Beszel",
+        model="Monitored system",
+        sw_version=str(info.get("v")) if info.get("v") else None,
+        configuration_url=entry.data[CONF_URL],
+    )
 
 
 class BeszelSensor(CoordinatorEntity[BeszelDataUpdateCoordinator], SensorEntity):
@@ -320,17 +342,8 @@ class BeszelSensor(CoordinatorEntity[BeszelDataUpdateCoordinator], SensorEntity)
             self._attr_device_class = SensorDeviceClass.ENUM
             self._attr_options = STATUS_OPTIONS
 
-        item = coordinator.data[system_id]
-        record = item["record"]
-        info = item["info"]
-        name = record.get("name") or system_id
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, system_id)},
-            name=name,
-            manufacturer="Beszel",
-            model="Monitored system",
-            sw_version=str(info.get("v")) if info.get("v") else None,
-            configuration_url=entry.data[CONF_URL],
+        self._attr_device_info = system_device_info(
+            entry, system_id, coordinator.data[system_id]
         )
 
     @property
@@ -356,6 +369,7 @@ class BeszelSensor(CoordinatorEntity[BeszelDataUpdateCoordinator], SensorEntity)
         description = self.entity_description
         if (
             description.state_class is not None
+            and description.live
             and item.get("record", {}).get("status") != "up"
         ):
             return None
@@ -366,6 +380,8 @@ class BeszelSensor(CoordinatorEntity[BeszelDataUpdateCoordinator], SensorEntity)
                 return None
             if description.device_class == SensorDeviceClass.TEMPERATURE:
                 return value if -273.15 <= value <= 200 else None
+            if description.device_class == "signal_strength":
+                return value if -200 <= value <= 0 else None
             if (
                 value < 0
                 or (

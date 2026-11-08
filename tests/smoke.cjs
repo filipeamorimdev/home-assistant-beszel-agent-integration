@@ -119,6 +119,29 @@ assert.equal(c.advancedSensorGroup('sensor.nas_temperature_coretemp', registry)?
 assert.equal(c.advancedSensorGroup('sensor.nas_hostname', registry)?.key, 'about');
 assert.equal(c.advancedSensorGroup('sensor.nas_eth0_sent_speed', registry)?.key, 'network');
 assert.equal(c.advancedSensorGroup('sensor.nas_cpu_usage', registry), null);
+// Expanded Beszel collections land in their own editor groups.
+const h = value => Buffer.from(value).toString('hex');
+for (const [uniqueKey, group] of [
+  [`smart_${h('d1')}_health`, 'drives'],
+  ['smart_failed', 'drives'],
+  [`zp_${h('tank')}_device_errors`, 'pools'],
+  [`zp_${h('tank')}_ds_${h('tank/media')}_used`, 'pools'],
+  [`z_${h('tank')}_health`, 'storage'],
+  [`efs_${h('media')}_read_total`, 'storage'],
+  [`container_${h('web')}_cpu`, 'containers'],
+  ['containers_running', 'containers'],
+  [`service_${h('nginx.service')}_sub_state`, 'containers'],
+  [`monitor_${h('m1')}_response_avg_1h`, 'monitors'],
+  [`wifi_${h('wlan0')}_signal`, 'network'],
+  [`alert_${h('CPU')}`, 'alerts'],
+  ['package_updates', 'alerts'],
+  ['cpu_softirq', 'processor'],
+  ['system_sockets', 'about'],
+]) {
+  const id = `sensor.x_${uniqueKey}`;
+  const reg = new Map([[id, { unique_id: `abc123_${uniqueKey}` }]]);
+  assert.equal(c.advancedSensorGroup(id, reg)?.key, group, uniqueKey);
+}
 console.log('Shared helper tests passed.');
 
 // ─── Machine card ────────────────────────────────────────────────────────────

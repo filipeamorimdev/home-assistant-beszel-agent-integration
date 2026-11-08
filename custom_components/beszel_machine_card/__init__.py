@@ -174,6 +174,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     entry.async_create_background_task(
         hass,
+        coordinator.async_poll_extras(),
+        f"{DOMAIN}-extras-poll-{entry.entry_id}",
+    )
+    entry.async_create_background_task(
+        hass,
         _async_refresh_token_loop(hass, entry, client),
         f"{DOMAIN}-token-refresh-{entry.entry_id}",
     )

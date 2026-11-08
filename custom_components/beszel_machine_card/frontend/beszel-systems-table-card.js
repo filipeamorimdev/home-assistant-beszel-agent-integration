@@ -34,7 +34,7 @@ import {
   renderDetailRows,
   temperatureLevel,
   thresholds,
-} from './beszel-common.js?v=0.1.0';
+} from './beszel-common.js?v=0.2.0';
 
 // Beszel's column order.
 const TABLE_COLUMNS = [

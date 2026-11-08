@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for test_api
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -114,17 +115,20 @@ def load_package(root, domain):
     package = types.ModuleType(name)
     package.__path__ = [str(root)]
     stubs[name] = package
-    # API behavior is tested separately; coordinator needs only exception types.
-    error = type("ApiError", (Exception,), {})
-    stubs[name + ".api"] = module(
+    stubs["homeassistant.components.binary_sensor"] = module(
         "",
-        BeszelApiClient=object,
-        BeszelApiError=error,
-        BeszelAuthError=type("AuthError", (error,), {}),
+        BinarySensorDeviceClass=types.SimpleNamespace(CONNECTIVITY="connectivity"),
+        BinarySensorEntity=type("BinarySensorEntity", (), {}),
     )
+    # API behavior is tested in test_api; reuse its module (with a fake aiohttp).
+    from test_api import API
+
+    stubs[name + ".api"] = API
     with patch.dict(sys.modules, stubs):
         sensor = __import__(name + ".sensor", fromlist=["sensor"])
         coord = __import__(name + ".coordinator", fromlist=["coordinator"])
+        binary = __import__(name + ".binary_sensor", fromlist=["binary_sensor"])
+    sensor.binary = binary
     return sensor, coord
 
 
@@ -267,3 +271,102 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
             self.assertEqual(coordinator.data["s1"]["details"]["hostname"], "NEW")
+
+
+class ExpandedRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.sensor, self.coord = load_package(
+            ROOT / "custom_components/beszel_machine_card", "beszel_machine_card"
+        )
+
+    def system(self):
+        return {
+            "record": {"status": "up", "name": "NAS"},
+            "info": {},
+            "stats": {"cpu": 1},
+            "containers": {"web": {"status": "Up", "cpu": 5, "updatable": True}},
+            "alerts": {"Status": {"system": "s1", "name": "Status", "triggered": False}},
+            "smart": {},
+        }
+
+    async def setup_entities(self):
+        hass = types.SimpleNamespace(data={})
+        coordinator = self.coord.BeszelDataUpdateCoordinator(hass, None)
+        coordinator.data = {"s1": self.system()}
+        hass.data[self.sensor.DOMAIN] = {"entry": coordinator}
+        entry = types.SimpleNamespace(
+            entry_id="entry",
+            data={"url": "http://hub"},
+            async_on_unload=lambda fn: None,
+        )
+        sensors, binaries = [], []
+        await self.sensor.async_setup_entry(hass, entry, sensors.extend)
+        await self.sensor.binary.async_setup_entry(hass, entry, binaries.extend)
+        by_key = {e.entity_description.key: e for e in sensors}
+        binary_by_key = {
+            getattr(e, "_metric", None) and e._metric.key: e for e in binaries
+        }
+        return coordinator, by_key, binary_by_key, binaries
+
+    async def test_binary_metrics_and_offline_rules(self):
+        coordinator, sensors, binaries, binary_list = await self.setup_entities()
+        alert = binaries["alert_" + b"Status".hex()]
+        update = binaries["container_" + b"web".hex() + "_update"]
+        self.assertIs(alert.is_on, False)
+        self.assertIs(update.is_on, True)
+        self.assertEqual(alert._attr_device_class, "problem")
+        self.assertEqual(alert._attr_unique_id, "s1_alert_" + b"Status".hex())
+        self.assertEqual(sensors["alerts_active"].native_value, 0)
+        cpu = sensors["container_" + b"web".hex() + "_cpu"]
+        self.assertEqual(cpu.native_value, 5)
+
+        coordinator.data["s1"]["record"]["status"] = "down"
+        coordinator.data["s1"]["alerts"]["Status"]["triggered"] = True
+        # Beszel's own alerts must keep reporting while the machine is down.
+        self.assertIs(alert.is_on, True)
+        self.assertEqual(sensors["alerts_active"].native_value, 1)
+        # Readings sampled by the agent go blank instead of staying "current".
+        self.assertIsNone(update.is_on)
+        self.assertIsNone(cpu.native_value)
+
+        count = len(binary_list)
+        coordinator.async_set_updated_data(
+            {
+                "s1": {
+                    **coordinator.data["s1"],
+                    "alerts": {
+                        **coordinator.data["s1"]["alerts"],
+                        "CPU": {"triggered": False},
+                    },
+                }
+            }
+        )
+        self.assertEqual(len(binary_list), count + 1)
+
+    async def test_realtime_smart_events_and_extras_merge(self):
+        coordinator = self.coord.BeszelDataUpdateCoordinator(
+            types.SimpleNamespace(), None
+        )
+        coordinator.data = {"s1": self.system(), "s2": self.system()}
+        record = {"id": "d1", "system": "s1", "name": "/dev/sda", "state": "PASSED"}
+        coordinator._handle_realtime_event(
+            "smart_devices/d1", {"action": "create", "record": record}
+        )
+        self.assertEqual(coordinator.data["s1"]["smart"]["d1"]["state"], "PASSED")
+        self.assertTrue(coordinator._realtime_activity.is_set())
+        coordinator._handle_realtime_event(
+            "smart_devices/d1", {"action": "delete", "record": record}
+        )
+        self.assertEqual(coordinator.data["s1"]["smart"], {})
+        # Unknown systems are ignored rather than creating partial devices.
+        coordinator._handle_realtime_event(
+            "zfs_pools/x", {"action": "update", "record": {"system": "nope", "name": "tank"}}
+        )
+        self.assertNotIn("nope", coordinator.data)
+
+        s2 = coordinator.data["s2"]
+        coordinator.apply_extras(
+            {"containers": {"s1": {"web": {"status": "Exited"}}, "s2": s2["containers"]}}
+        )
+        self.assertEqual(coordinator.data["s1"]["containers"]["web"]["status"], "Exited")
+        self.assertIs(coordinator.data["s2"], s2)  # unchanged system keeps identity

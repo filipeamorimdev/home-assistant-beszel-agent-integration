@@ -53,7 +53,7 @@ import {
   temperatureLevel,
   thresholds,
   validReading,
-} from './beszel-common.js?v=0.1.0';
+} from './beszel-common.js?v=0.2.0';
 
 // ─── Sensor discovery heuristics ────────────────────────────────────────────
 // For each slot, we try a list of patterns (ordered by confidence).
@@ -155,13 +155,18 @@ const LEGACY_SLOT_KEYS = {
 // Advanced Beszel metrics are grouped in the editor. Groups match the stable
 // unique-ID key ("<system>_<key>"), never the name-derived entity ID.
 const ADVANCED_SENSOR_GROUPS = [
-  { key: 'processor', label: 'Processor', test: id => /_(cpu_(user|system|iowait|steal|idle)|cpu_core_\d+)$/.test(id) },
+  { key: 'processor', label: 'Processor', test: id => /_(cpu_(user|system|iowait|steal|idle|irq|softirq|nice)|cpu_core_\d+)$/.test(id) },
   { key: 'memory', label: 'Memory and swap', test: id => /_(memory_(total|used|cache|zfs_arc)|swap_(total|used|usage))$/.test(id) },
-  { key: 'storage', label: 'Storage and disk I/O', test: id => /_(disk_(total|used|free|read_speed|write_speed|read_total|write_total|read_time|write_time|utilization|read_latency|write_latency|weighted_time)|(?:efs|z)_[a-f0-9]+_(total|used|free|usage|read|write|health))$/.test(id) },
-  { key: 'network', label: 'Network interfaces', test: id => /_network_[a-f0-9]+_(sent_speed|received_speed|sent_total|received_total)$/.test(id) },
+  { key: 'storage', label: 'Storage and disk I/O', test: id => /_(disk_(total|used|free|read_speed|write_speed|read_total|write_total|read_time|write_time|utilization|read_latency|write_latency|weighted_time)|(?:efs|z)_[a-f0-9]+_(total|used|free|usage|read|write|health|read_total|write_total|read_time|write_time|utilization|read_latency|write_latency|weighted_time))$/.test(id) },
+  { key: 'drives', label: 'Drives (SMART)', test: id => /_(smart_failed|smart_[a-f0-9]+_[a-z_]+)$/.test(id) },
+  { key: 'pools', label: 'ZFS pools and datasets', test: id => /_zp_[a-f0-9]+_[a-z0-9_]+$/.test(id) },
+  { key: 'network', label: 'Network interfaces and Wi-Fi', test: id => /_(network_[a-f0-9]+_(sent_speed|received_speed|sent_total|received_total)|wifi_[a-f0-9]+_(signal|ssid))$/.test(id) },
+  { key: 'monitors', label: 'Network monitors', test: id => /_monitor_[a-f0-9]+_[a-z0-9_]+$/.test(id) },
+  { key: 'containers', label: 'Containers and services', test: id => /_(containers_(running|unhealthy)|container_updates|container_[a-f0-9]+_[a-z]+|service_[a-f0-9]+_[a-z_]+)$/.test(id) },
+  { key: 'alerts', label: 'Alerts and updates', test: id => /_(alerts_active|alert_[a-f0-9]+|package_updates|security_updates)$/.test(id) },
   { key: 'cooling', label: 'Temperatures and fans', test: id => /_(t|f)_[a-f0-9]+$/.test(id) },
-  { key: 'graphics', label: 'GPU and battery', test: id => /_(gpu_[a-f0-9]+_(u|mu|mt|p|pp)|bats_[a-f0-9]+)$/.test(id) },
-  { key: 'about', label: 'Machine details', test: id => /_system_(hostname|os_name|kernel|cpu|arch|cores|threads)$/.test(id) },
+  { key: 'graphics', label: 'GPU and battery', test: id => /_(gpu_[a-f0-9]+_(u|mu|mt|p|pp|e_[a-f0-9]+)|bats_[a-f0-9]+)$/.test(id) },
+  { key: 'about', label: 'Machine details', test: id => /_system_(hostname|os_name|kernel|cpu|arch|cores|threads|sockets|connection)$/.test(id) },
 ];
 const CORE_SENSOR_SUFFIXES = new Set(['status','cpu_usage','memory_usage','disk_usage','cpu_temperature','network_received_speed','network_sent_speed','uptime','load_1m','load_5m','load_15m','gpu_usage','battery','services_total','services_failed','agent_version','hub_connection']);
 
@@ -185,6 +190,7 @@ function advancedSensorLabel(entityId, hass) {
 function advancedSensorState(entityId, hass) {
   const value = pick(hass, 'states', entityId, 'state');
   if (!validReading(value)) return '';
+  if (String(entityId).indexOf('binary_sensor.') === 0) return value === 'on' ? 'Yes' : value === 'off' ? 'No' : '';
   const unit = pick(hass, 'states', entityId, 'attributes', 'unit_of_measurement') || '';
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
@@ -941,7 +947,7 @@ class BeszelMachineCardEditor extends HTMLElement {
     const ids = value === 'all'
       ? available
       : available.filter(id => value === 'storage'
-        ? /_(disk_|memory_(total|used)|swap_)/.test(advancedKey(id, this._entityRegistry))
+        ? /_(disk_|memory_(total|used)|swap_|smart_failed$|smart_[a-f0-9]+_(health|temperature)$|zp_[a-f0-9]+_(scrub_errors|device_errors|unhealthy_devices)$)/.test(advancedKey(id, this._entityRegistry))
         : /_(cpu_(user|system|iowait)|disk_(read_speed|write_speed|read_latency|write_latency)|t_|f_)/.test(advancedKey(id, this._entityRegistry)));
     const pins = ids.filter(id => /_(disk_free|disk_read_speed|disk_write_speed|cpu_user|cpu_system)$/.test(advancedKey(id, this._entityRegistry)));
     this._setAdvancedEntities(ids, pins);

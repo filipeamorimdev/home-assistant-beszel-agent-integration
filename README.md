@@ -122,7 +122,16 @@ For old tablets where custom cards don't run at all (Android 4), paste the bundl
 
 Every system becomes a device with core sensors (status, CPU, memory, disk, temperature, network, uptime, load). Extra detail — RAM and disk totals, swap, fan speed and more — appears when Beszel reports it. Very detailed sensors (per-core CPU, per-interface network, per-GPU, machine identity) are disabled by default; enable them from the device page if you want them.
 
-Containers, SMART devices, individual systemd services and ZFS datasets are not imported.
+When Beszel collects them, these are imported too:
+
+- **Drives (SMART):** health, temperature and power-on hours per drive, plus a "drives failing SMART" count. Wear, spare, reallocated/pending sectors, serial and firmware are disabled by default.
+- **ZFS pools:** scrub errors, device errors and unhealthy devices per pool. Scrub state, each vdev and each dataset are disabled by default.
+- **Containers and services:** running / unhealthy / update counts. Per-container and per-service sensors are disabled by default.
+- **Network monitors:** response time, packet loss and certificate expiry.
+- **Alerts:** an "active alerts" count and one problem sensor per Beszel alert, which keep working while the machine is offline.
+- **Package updates**, Wi-Fi signal and filesystem I/O totals.
+
+**Can't see your disks or pools (e.g. TrueNAS)?** Check the Beszel web UI first. If Beszel doesn't show them, the agent needs access: use the `henrygd/beszel-agent:alpine` image (it includes `zpool` and `smartctl`) or the agent binary on the host, and add extra disks with `EXTRA_FILESYSTEMS` or mounts under `/extra-filesystems/`. If Beszel shows them, enable the matching `Filesystem …` / `ZFS pool …` sensors on the device page.
 
 ## Credits
 
