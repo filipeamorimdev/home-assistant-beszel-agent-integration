@@ -34,7 +34,7 @@ import {
   renderDetailRows,
   temperatureLevel,
   thresholds,
-} from './beszel-common.js?v=0.1.3';
+} from './beszel-common.js?v=0.1.2.1';
 
 // Beszel's column order.
 const TABLE_COLUMNS = [
@@ -658,13 +658,17 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
         : this._systems.map(system => system.id),
     );
     const selectedColumns = new Set(this._config.columns || DEFAULT_TABLE_COLUMNS);
-    const checks = columns => columns.map(column => `<ha-formfield label="${escapeHtml(column.label)}"><ha-checkbox data-column="${column.key}"></ha-checkbox></ha-formfield>`).join('');
+    const checks = columns => columns.map(column => `<label class="check"><input type="checkbox" data-column="${column.key}"><span>${escapeHtml(column.label)}</span></label>`).join('');
     this.shadowRoot.innerHTML = `
       <style>
         .editor { display:flex; flex-direction:column; gap:8px; padding:8px 4px; }
         .section { margin-top:8px; color:var(--secondary-text-color); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; }
         input[type=text] { box-sizing:border-box; width:100%; min-height:40px; padding:0 10px; border:1px solid var(--divider-color); border-radius:4px; background:transparent; color:var(--primary-text-color); font:inherit; }
         input[type=text]:focus { outline:none; border-color:var(--primary-color); }
+        .check { display:flex; align-items:center; gap:10px; min-height:32px; font-size:14px; color:var(--primary-text-color); cursor:pointer; }
+        .check input { width:18px; height:18px; margin:0 2px; flex:none; accent-color:var(--primary-color); cursor:pointer; }
+        .check span { min-width:0; overflow-wrap:anywhere; }
+        .check input:disabled, .check input:disabled + span { opacity:.5; cursor:default; }
         .checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:3px 8px; }
         .empty, .hint { color:var(--secondary-text-color); font-size:11px; }
         .field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--primary-text-color); }
@@ -682,14 +686,14 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
             <option value="grid">Grid (Beszel cards)</option>
           </select>
         </label>
-        <ha-formfield label="Show Hub connection warning"><ha-checkbox id="hub-status"></ha-checkbox></ha-formfield>
-        <ha-formfield label="Hide offline systems"><ha-checkbox id="hide-offline"></ha-checkbox></ha-formfield>
-        <ha-formfield label="Show only systems with alerts (hide the card when none)"><ha-checkbox id="only-alerts"></ha-checkbox></ha-formfield>
-        <ha-formfield label="Hide columns no system reports"><ha-checkbox id="hide-empty-columns"></ha-checkbox></ha-formfield>
-        <ha-formfield label="Split network into ↓ / ↑"><ha-checkbox id="split-network"></ha-checkbox></ha-formfield>
-        <ha-formfield label="Terminal style (plain monospace layout)"><ha-checkbox id="terminal-style"></ha-checkbox></ha-formfield>
+        <label class="check"><input type="checkbox" id="hub-status"><span>Show Hub connection warning</span></label>
+        <label class="check"><input type="checkbox" id="hide-offline"><span>Hide offline systems</span></label>
+        <label class="check"><input type="checkbox" id="only-alerts"><span>Show only systems with alerts (hide the card when none)</span></label>
+        <label class="check"><input type="checkbox" id="hide-empty-columns"><span>Hide columns no system reports</span></label>
+        <label class="check"><input type="checkbox" id="split-network"><span>Split network into ↓ / ↑</span></label>
+        <label class="check"><input type="checkbox" id="terminal-style"><span>Terminal style (plain monospace layout)</span></label>
         <div class="section">Systems</div>
-        <div class="checks" id="systems">${this._systems.length ? this._systems.map(system => `<ha-formfield label="${escapeHtml(system.name)}"><ha-checkbox data-system-id="${escapeHtml(system.id)}"></ha-checkbox></ha-formfield>`).join('') : '<span class="empty">No Beszel systems found</span>'}</div>
+        <div class="checks" id="systems">${this._systems.length ? this._systems.map(system => `<label class="check"><input type="checkbox" data-system-id="${escapeHtml(system.id)}"><span>${escapeHtml(system.name)}</span></label>`).join('') : '<span class="empty">No Beszel systems found</span>'}</div>
         <div class="section">Columns</div>
         <div class="checks" id="columns">${checks(TABLE_COLUMNS)}</div>
         <details class="advanced-columns"${this._advancedColumnsOpen ? ' open' : ''}><summary>Advanced columns</summary><div class="checks">${checks(ADVANCED_TABLE_COLUMNS)}</div></details>

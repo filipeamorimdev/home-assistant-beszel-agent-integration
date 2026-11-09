@@ -3,11 +3,15 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.2.1] - 2026-11-09
 
 ### Changed
 - The integration is now called **Beszel Agent Integration** (was "Home Assistant Beszel Agent Integration"). Existing setups, devices and entities are unchanged.
 - The integration icon is now the Beszel logo.
+- The README is now a short landing page; installation, card and sensor details moved to `docs/`.
+
+### Fixed
+- Card editors: checkbox options (display toggles, systems, columns) showed no labels on current Home Assistant versions, which no longer ship the `ha-formfield` element. They now use labelled native checkboxes.
 
 ## [0.1.2] - 2026-11-09
 

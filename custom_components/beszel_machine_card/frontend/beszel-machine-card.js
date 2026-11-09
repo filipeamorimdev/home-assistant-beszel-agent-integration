@@ -53,7 +53,7 @@ import {
   temperatureLevel,
   thresholds,
   validReading,
-} from './beszel-common.js?v=0.1.3';
+} from './beszel-common.js?v=0.1.2.1';
 
 // ─── Sensor discovery heuristics ────────────────────────────────────────────
 // For each slot, we try a list of patterns (ordered by confidence).
@@ -1113,6 +1113,10 @@ class BeszelMachineCardEditor extends HTMLElement {
         #advanced-sensors { display:flex; flex-direction:column; gap:8px; }
         #advanced-sensors details { border-top:1px solid var(--divider-color); padding:6px 0; }
         #advanced-sensors summary { cursor:pointer; padding:6px 0; }
+        .check { display:flex; align-items:center; gap:10px; min-height:32px; font-size:14px; color:var(--primary-text-color); cursor:pointer; }
+        .check input { width:18px; height:18px; margin:0 2px; flex:none; accent-color:var(--primary-color); cursor:pointer; }
+        .check span { min-width:0; overflow-wrap:anywhere; }
+        .check input:disabled, .check input:disabled + span { opacity:.5; cursor:default; }
         .advanced-row { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:5px 0; }
         .advanced-row label { display:flex; gap:8px; align-items:center; min-width:0; }
         .advanced-row label span { overflow-wrap:anywhere; }
@@ -1139,9 +1143,7 @@ class BeszelMachineCardEditor extends HTMLElement {
           <input type="text" id="subtitle" data-key="subtitle" autocomplete="off">
         </label>
 
-        <ha-formfield label="Hide the card while the system is offline">
-          <ha-checkbox id="hide-when-offline"></ha-checkbox>
-        </ha-formfield>
+        <label class="check"><input type="checkbox" id="hide-when-offline"><span>Hide the card while the system is offline</span></label>
         <label class="entity-field">
           <span class="field-label">Layout</span>
           <span class="select-shell">
@@ -1153,15 +1155,9 @@ class BeszelMachineCardEditor extends HTMLElement {
             <ha-icon class="select-chevron" icon="mdi:menu-down"></ha-icon>
           </span>
         </label>
-        <ha-formfield label="Detailed list: keep empty rows (GPU, battery…)">
-          <ha-checkbox id="show-empty-rows"></ha-checkbox>
-        </ha-formfield>
-        <ha-formfield label="Detailed list: split network into ↓ / ↑">
-          <ha-checkbox id="split-network"></ha-checkbox>
-        </ha-formfield>
-        <ha-formfield label="Terminal style (plain monospace layout)">
-          <ha-checkbox id="terminal-style"></ha-checkbox>
-        </ha-formfield>
+        <label class="check"><input type="checkbox" id="show-empty-rows"><span>Detailed list: keep empty rows (GPU, battery…)</span></label>
+        <label class="check"><input type="checkbox" id="split-network"><span>Detailed list: split network into ↓ / ↑</span></label>
+        <label class="check"><input type="checkbox" id="terminal-style"><span>Terminal style (plain monospace layout)</span></label>
 
         <div class="section-title">Device</div>
 

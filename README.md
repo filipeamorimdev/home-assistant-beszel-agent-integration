@@ -1,153 +1,43 @@
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5?style=for-the-badge&logo=homeassistantcommunitystore&logoColor=white)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![Release](https://img.shields.io/github/v/release/filipeamorimdev/home-assistant-beszel-agent-integration?style=for-the-badge&logo=github&logoColor=white)](https://github.com/filipeamorimdev/home-assistant-beszel-agent-integration/releases)
+[![Validate](https://img.shields.io/github/actions/workflow/status/filipeamorimdev/home-assistant-beszel-agent-integration/validate.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=validate)](https://github.com/filipeamorimdev/home-assistant-beszel-agent-integration/actions/workflows/validate.yml)
+
 # Beszel Agent Integration
 
-Bring your [Beszel](https://beszel.dev/) monitored servers into Home Assistant — as devices, sensors, and ready-made dashboard cards.
-
-> **Unofficial project.** Not affiliated with the Beszel project. All monitoring is done by [Beszel](https://github.com/henrygd/beszel) by [henrygd](https://github.com/henrygd) — see [Credits](#credits).
-
-> **Background:** this project is an evolution of [home-assistant-glances-card](https://github.com/filipeamorimdev/home-assistant-glances-card). I migrated my infrastructure monitoring from Glances to Beszel, and this is the Home Assistant side of that move.
+Bring the servers you monitor with [Beszel](https://github.com/henrygd/beszel) into Home Assistant as devices, sensors and ready-made dashboard cards.
 
 ![Beszel Agent Integration preview](docs/images/beszel-card-preview.gif)
 
-## Features
+> Unofficial project, not affiliated with Beszel. You need a running Beszel Hub with an agent on every machine you want to see.
 
-- **One device per Beszel system**, with sensors for status, CPU, memory, disk, temperature, network, uptime and load. GPU, battery, systemd health and agent version appear when Beszel reports them.
-- **Live updates** from your Hub, with new systems appearing without a restart.
-- **Two dashboard cards** bundled with the integration — a machine card and a systems table — with visual editors and automatic sensor selection.
-- **Compact, detailed, table, grid and terminal layouts**, theme-aware, with health colours and readable network speeds.
-- **Offline-aware:** offline machines show as down instead of publishing stale numbers.
-- **Safe sign-in:** a normal, readonly Beszel account is enough; your password is used once and never stored.
+## Quick installation
 
-## Requirements
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=filipeamorimdev&repository=home-assistant-beszel-agent-integration&category=integration)
 
-This integration only *reads* from Beszel. You need to set up Beszel first:
+1. Set up a [Beszel Hub](https://beszel.dev/guide/getting-started) and [install the agent](https://beszel.dev/guide/agent-installation) on each machine.
+2. Add this repository to HACS with the button above (type **Integration**), download it and restart Home Assistant (2026.6 or newer).
+3. Go to **Settings → Devices & services → Add integration**, pick **Beszel Agent Integration** and sign in with your Hub URL and a normal Beszel user (readonly is enough).
 
-1. A **Beszel Hub** that Home Assistant can reach ([getting started](https://beszel.dev/guide/getting-started)).
-2. The **Beszel agent installed on every machine** you want to monitor, each added to the Hub ([agent installation](https://beszel.dev/guide/agent-installation)). Machines without an agent will not show up.
-3. A **Beszel user** (readonly is enough) that can see those systems.
-4. **Home Assistant 2026.6 or newer.**
+Every system that shows as **Up** in Beszel becomes a Home Assistant device. See the [installation guide](docs/INSTALLATION.md) for manual install and setup details.
 
-Once a machine shows as **Up** in the Beszel web UI, it will appear in Home Assistant.
+## Dashboard cards
 
-## Installation
+Two cards come with the integration, with no Lovelace resource to add: a **machine card** for one server and a **systems table** for all of them.
 
-### HACS (custom repository)
-
-1. In HACS, open the **⋮** menu → **Custom repositories**.
-2. Add `https://github.com/filipeamorimdev/home-assistant-beszel-agent-integration` with type **Integration**.
-3. Search for **Beszel Agent Integration**, download it, and restart Home Assistant.
-
-### Manual
-
-1. Download the latest zip from [Releases](../../releases) (or use **Code → Download ZIP** / `git clone`).
-2. Copy `custom_components/beszel_machine_card` into your Home Assistant `config/custom_components/` folder.
-3. Restart Home Assistant.
-
-Then go to **Settings → Devices & services → Add integration** and search for **Beszel Agent Integration**.
-
-The cards are loaded by the integration itself — no Lovelace resource to add. After an update, restart and hard-refresh your browser.
-
-## Connect your Hub
-
-Enter the Hub address Home Assistant can reach, then sign in with your Beszel account.
-
-| Hub URL | Account |
+| Machine card | Systems table |
 | --- | --- |
-| ![Connect to Beszel — Hub URL](docs/images/beszel-setup-hub-url.jpg) | ![Beszel account](docs/images/beszel-setup-account.jpg) |
+| ![Compact machine card](docs/images/beszel-machine-compact.png) | ![Systems table](docs/images/beszel-systems-table-compact.png) |
 
-- Use a normal Beszel user (not a PocketBase `_superusers` account). A readonly user with access to the systems you need is enough.
-- HTTPS is recommended if the Hub is reachable beyond your LAN. Home Assistant shows a repair warning for a plain `http://` address outside your local network.
-- If the session can't be refreshed, Home Assistant will ask you to sign in again.
+## Documentation
 
-## Cards
+- [Installation and setup](docs/INSTALLATION.md)
+- [Dashboard cards and options](docs/CARDS.md)
+- [Sensors and troubleshooting](docs/SENSORS.md)
 
-Both cards appear in the Lovelace card picker under **Add card**.
-
-![Add Beszel cards](docs/images/add-beszel-cards.jpg)
-
-### Machine card
-
-One server, as compact tiles or as a detailed list. Pick a device and everything else is filled in.
-
-| Compact tiles | Detailed list |
-| --- | --- |
-| ![Compact machine card](docs/images/beszel-machine-compact.png) | ![Detailed machine card](docs/images/beszel-machine-detailed.png) |
-
-- **Compact** (default): CPU, RAM and Disk tiles with meters, used / total sizes, network speed, temperature and uptime.
-- **Detailed:** the rows of a Beszel system card — CPU, Memory, Disk, Load Avg, Net, Temp, Services, Uptime, Agent — plus any extra metrics you add.
-- Meters change colour at the warning / critical thresholds (65% / 90% by default).
-- **Hide the card while the system is offline** (`hide_when_offline: true`) removes the whole card from the dashboard while the machine is down, like a conditional card. It stays visible in edit mode so you can still configure it.
-
-```yaml
-type: custom:beszel-machine-card
-device_id: 0123456789abcdef0123456789abcdef
-title: TrueNAS
-layout: detailed          # or compact (default)
-hide_when_offline: false
-```
-
-![Card configuration](docs/images/beszel-card-configuration.jpg)
-
-### Systems table
-
-Beszel's "All Systems" view for every machine: a sortable table, or a grid of cards that takes over on narrow screens.
-
-![Systems table](docs/images/beszel-systems-table.png)
-
-Choose only the columns you need for a smaller overview:
-
-![Compact systems table](docs/images/beszel-systems-table-compact.png)
-
-Or use the grid layout, which suits phones and narrow columns:
-
-![Systems grid](docs/images/beszel-systems-grid.png)
-
-- Click a header to sort; click a row to open the device page.
-- Offline machines stay in the list with blank metrics, so a machine that stops reporting is obvious. **Hide offline systems** removes them.
-- **Show only systems with alerts** (`only_alerts: true`) keeps just the machines with an amber or red indicator — CPU, memory, disk, GPU or load over the warning threshold, hot CPU, low battery, a failed service, or a pending status. All-green and offline machines are hidden, and when no machine has an alert the whole card is hidden (like a conditional card). It stays visible in dashboard edit mode, while the Hub warning is shown, and when no Beszel systems exist at all.
-- Columns that no machine reports are hidden automatically.
-
-```yaml
-type: custom:beszel-systems-table-card
-title: Homelab
-layout: auto              # table | grid | auto
-columns: [cpu, load, temperature]
-hide_when_offline: true
-only_alerts: false
-```
-
-### Terminal style
-
-Enable **Terminal style** in either card editor (`style: terminal`) for a green monospace look. It also renders on very old browsers.
-
-![Terminal style machine card](docs/images/beszel-terminal.png)
-
-![Terminal style systems list](docs/images/beszel-terminal-systems.png)
-
-For old tablets where custom cards don't run at all (Android 4), paste the bundled [native terminal card](custom_components/beszel_machine_card/frontend/beszel-native-terminal.yaml) into a **Manual** card instead.
-
-## Sensors
-
-Every system becomes a device with core sensors (status, CPU, memory, disk, temperature, network, uptime, load). Extra detail — RAM and disk totals, swap, fan speed and more — appears when Beszel reports it. Very detailed sensors (per-core CPU, per-interface network, per-GPU, machine identity) are disabled by default; enable them from the device page if you want them.
-
-When Beszel collects them, these are imported too:
-
-- **Drives (SMART):** health, temperature and power-on hours per drive, plus a "drives failing SMART" count. Wear, spare, reallocated/pending sectors, serial and firmware are disabled by default.
-- **ZFS pools:** scrub errors, device errors and unhealthy devices per pool. Scrub state, each vdev and each dataset are disabled by default.
-- **Containers and services:** running / unhealthy / update counts. Per-container and per-service sensors are disabled by default.
-- **Network monitors:** response time, packet loss and certificate expiry.
-- **Alerts:** an "active alerts" count and one problem sensor per Beszel alert, which keep working while the machine is offline.
-- **Package updates**, Wi-Fi signal and filesystem I/O totals.
-
-**Can't see your disks or pools (e.g. TrueNAS)?** Check the Beszel web UI first. If Beszel doesn't show them, the agent needs access: use the `henrygd/beszel-agent:alpine` image (it includes `zpool` and `smartctl`) or the agent binary on the host, and add extra disks with `EXTRA_FILESYSTEMS` or mounts under `/extra-filesystems/`. If Beszel shows them, enable the matching `Filesystem …` / `ZFS pool …` sensors on the device page.
+[Report an issue](https://github.com/filipeamorimdev/home-assistant-beszel-agent-integration/issues) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
 
 ## Credits
 
-This project builds on **[Beszel](https://github.com/henrygd/beszel)** by [henrygd](https://github.com/henrygd) and its contributors (MIT). The Beszel agent collects the data and the Hub stores it; this integration only displays it in Home Assistant. Docs: <https://beszel.dev/>. If you find this useful, consider starring Beszel too.
+All monitoring is done by **[Beszel](https://github.com/henrygd/beszel)** by [henrygd](https://github.com/henrygd) and its contributors (MIT); this integration only shows its data in Home Assistant. If you find it useful, consider starring Beszel too.
 
-## Security
-
-See [SECURITY.md](SECURITY.md) to report a vulnerability privately.
-
-## License
-
-MIT
+This project grew out of [home-assistant-glances-card](https://github.com/filipeamorimdev/home-assistant-glances-card) when I moved my monitoring from Glances to Beszel.

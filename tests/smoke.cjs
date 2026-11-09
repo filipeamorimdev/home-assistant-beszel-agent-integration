@@ -739,6 +739,14 @@ assert.match(editorHtml, /Show only systems with alerts \(hide the card when non
 assert.match(editorHtml, /data-system-id="srv"/);
 assert.match(editorHtml, /data-system-id="nas"/);
 assert.doesNotMatch(editorHtml, /<script>alert/, 'system names are escaped in the editor');
+// HA no longer ships ha-formfield, whose label attribute then renders nothing.
+// Checkbox labels must be real text next to a native input.
+for (const [name, src] of [['machine card', source], ['systems table', tableSource]]) {
+  assert.doesNotMatch(src, /<ha-formfield|<ha-checkbox/, `${name} editor does not rely on ha-formfield/ha-checkbox`);
+}
+const tableChecks = editorHtml.match(/<input type="checkbox"[^>]*>/g) || [];
+assert.ok(tableChecks.length >= 8, 'table editor renders native checkboxes');
+assert.equal((editorHtml.match(/<label class="check"><input type="checkbox"[^>]*><span>[^<]+<\/span><\/label>/g) || []).length, tableChecks.length, 'every table editor checkbox has visible label text');
 assert.equal(ed.getElementById('title').value, 'Homelab');
 assert.equal(ed.getElementById('layout').value, 'auto');
 assert.equal(ed.getElementById('hub-status').checked, true);
