@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Connect to Beszel",
-        "description": "Enter the address of your Beszel Hub (for example `http://192.168.1.10:8090` or `https://beszel.example.com`). Home Assistant must be able to reach this URL.",
+        "description": "Enter the address of your Beszel Hub (for example `{lan_example}` or `{https_example}`). Home Assistant must be able to reach this URL.",
         "data": {
           "url": "Beszel Hub URL"
         }
@@ -32,6 +32,12 @@
       "cannot_connect": "Could not connect to the Beszel Hub",
       "reauth_failed": "Could not restart Beszel sign-in",
       "reauth_successful": "Beszel authorization updated"
+    }
+  },
+  "issues": {
+    "insecure_url": {
+      "title": "Beszel Hub connection is not encrypted",
+      "description": "Home Assistant connects to the Beszel Hub at {url} over plain HTTP, and that address is not on your local network. The Beszel session token is sent unencrypted on every request. Put the Hub behind HTTPS, then remove and add the integration again with the `https://` address."
     }
   },
   "entity": {

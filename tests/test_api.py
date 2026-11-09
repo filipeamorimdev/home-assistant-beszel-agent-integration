@@ -356,6 +356,42 @@ class ExpandedApiTests(unittest.IsolatedAsyncioTestCase):
         client = API.BeszelApiClient(session, "http://beszel.test", make_token())
         self.assertEqual(await client.async_get_systems(), [{"id": "s1"}, {"id": "s2"}])
 
+    async def test_pagination_ignores_bogus_total_pages(self):
+        class Session(FakeSession):
+            def __init__(self, total):
+                super().__init__()
+                self.total = total
+
+            def request(self, method, url, **kwargs):
+                self.requests.append((method, url, kwargs))
+                page = kwargs["params"]["page"]
+                return FakeResponse(
+                    200, {"items": [{"id": f"s{page}"}], "totalPages": self.total}
+                )
+
+        session = Session("3")
+        client = API.BeszelApiClient(session, "http://beszel.test", make_token())
+        self.assertEqual(await client.async_get_systems(), [{"id": "s1"}])
+
+        session = Session(10**9)
+        client = API.BeszelApiClient(session, "http://beszel.test", make_token())
+        self.assertEqual(len(await client.async_get_systems()), API.MAX_PAGES)
+
+    async def test_sse_survives_invalid_utf8(self):
+        async def content():
+            for line in (
+                b"event: systems/s1\n",
+                b"data: \xff\xfe\n",
+                b"\n",
+                b"event: systems/s2\n",
+                b'data: {"action":"update","record":{"id":"s2"}}\n',
+                b"\n",
+            ):
+                yield line
+
+        events = [event async for event in API._iter_sse_events(content())]
+        self.assertEqual([name for name, _ in events], ["systems/s2"])
+
     async def test_optional_details_failure_keeps_system_metrics(self):
         class Session(FakeSession):
             def request(self, method, url, **kwargs):

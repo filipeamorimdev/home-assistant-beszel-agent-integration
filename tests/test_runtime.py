@@ -195,7 +195,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             coordinator.data["s1"]["details"] = {"threads": 8, "cores": 4}
             self.assertEqual(
                 status.extra_state_attributes,
-                {"host": "10.0.0.2", "threads": 8, "cores": 4},
+                {"threads": 8, "cores": 4},  # agent host/port never exposed
             )
             coordinator.data["s1"]["details"] = {}
             coordinator.data["s1"]["info"] = {"t": 16, "c": 0}
@@ -370,3 +370,60 @@ class ExpandedRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(coordinator.data["s1"]["containers"]["web"]["status"], "Exited")
         self.assertIs(coordinator.data["s2"], s2)  # unchanged system keeps identity
+
+
+class SafetyTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        _sensor, self.coord = load_package(
+            ROOT / "custom_components/beszel_machine_card", "beszel_machine_card"
+        )
+
+    def make(self, client):
+        coordinator = self.coord.BeszelDataUpdateCoordinator(
+            types.SimpleNamespace(data={}), client, "entry"
+        )
+        coordinator.cleanups = []
+        coordinator._async_cleanup_stale_devices = coordinator.cleanups.append
+        return coordinator
+
+    async def test_empty_hub_answer_keeps_devices(self):
+        class Client:
+            data = {}
+
+            async def async_get_data(self):
+                return self.data
+
+        client = Client()
+        coordinator = self.make(client)
+        await coordinator._async_update_data()
+        self.assertEqual(coordinator.cleanups, [])
+
+        client.data = {"s1": {}}
+        await coordinator._async_update_data()
+        self.assertEqual(coordinator.cleanups, [{"s1"}])
+
+    async def test_realtime_survives_unexpected_errors(self):
+        import asyncio
+
+        class Client:
+            calls = 0
+
+            async def async_listen_realtime(self, *_args):
+                self.calls += 1
+                if self.calls == 1:
+                    raise ValueError("Chunk too big")
+                raise asyncio.CancelledError
+
+        client = Client()
+        coordinator = self.make(client)
+
+        async def no_refresh():
+            return None
+
+        coordinator.async_request_refresh = no_refresh
+        with patch.object(self.coord.asyncio, "sleep", new=lambda _s: no_refresh()):
+            with self.assertRaises(asyncio.CancelledError), self.assertLogs(
+                self.coord._LOGGER, "WARNING"
+            ):
+                await coordinator.async_listen_realtime()
+        self.assertEqual(client.calls, 2)

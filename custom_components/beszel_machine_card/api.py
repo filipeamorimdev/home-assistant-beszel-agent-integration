@@ -27,6 +27,8 @@ EXTRA_COLLECTIONS: dict[str, tuple[str, str]] = {
 }
 # The Hub writes these with raw SQL every minute, so PocketBase never
 # broadcasts realtime events for them; they are polled instead.
+# 500 records per page; a Hub claiming more pages than this is misbehaving.
+MAX_PAGES = 100
 POLLED_COLLECTIONS = ("containers", "systemd_services", "network_monitors")
 REALTIME_EXTRA_COLLECTIONS = ("smart_devices", "zfs_pools", "alerts")
 
@@ -157,7 +159,11 @@ class BeszelApiClient:
                 optional=optional,
             )
             records.extend(self._items(payload))
-            if page >= payload.get("totalPages", 1):
+            total_pages = payload.get("totalPages", 1)
+            if (
+                not isinstance(total_pages, int)
+                or page >= min(total_pages, MAX_PAGES)
+            ):
                 return records
             page += 1
 
@@ -480,7 +486,7 @@ async def _iter_sse_events(content: Any) -> AsyncIterator[tuple[str, dict[str, A
     data_lines: list[str] = []
 
     async for raw_line in content:
-        line = raw_line.decode("utf-8").rstrip("\r\n")
+        line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
         if not line:
             if data_lines:
                 try:

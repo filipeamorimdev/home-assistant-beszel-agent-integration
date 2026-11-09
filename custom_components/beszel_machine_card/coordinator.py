@@ -48,7 +48,10 @@ class BeszelDataUpdateCoordinator(DataUpdateCoordinator[dict]):
             raise ConfigEntryAuthFailed(str(err)) from err
         except BeszelApiError as err:
             raise UpdateFailed(str(err)) from err
-        self._async_cleanup_stale_devices(set(data))
+        # An empty answer is more likely a permission change or a Hub being
+        # restored than every system deleted at once; keep the devices.
+        if data:
+            self._async_cleanup_stale_devices(set(data))
         return data
 
     def _async_cleanup_stale_devices(self, active_system_ids: set[str]) -> None:
@@ -83,6 +86,12 @@ class BeszelDataUpdateCoordinator(DataUpdateCoordinator[dict]):
                     "Beszel realtime stream interrupted; reconnecting in %s seconds: %s",
                     retry_delay,
                     err,
+                )
+            except Exception:  # noqa: BLE001 - keep realtime alive on bad input
+                _LOGGER.warning(
+                    "Unexpected Beszel realtime error; reconnecting in %s seconds",
+                    retry_delay,
+                    exc_info=True,
                 )
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 60)

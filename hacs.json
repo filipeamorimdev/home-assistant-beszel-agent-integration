@@ -1,0 +1,5 @@
+{
+  "name": "Home Assistant Beszel Agent Integration",
+  "homeassistant": "2026.6.0",
+  "render_readme": true
+}

@@ -30,14 +30,21 @@ Once a machine shows as **Up** in the Beszel web UI, it will appear in Home Assi
 
 ## Installation
 
-Manual custom-component install (HACS is not supported for now):
+### HACS (custom repository)
+
+1. In HACS, open the **⋮** menu → **Custom repositories**.
+2. Add `https://github.com/filipeamorimdev/home-assistant-beszel-agent-integration` with type **Integration**.
+3. Search for **Home Assistant Beszel Agent Integration**, download it, and restart Home Assistant.
+
+### Manual
 
 1. Download the latest zip from [Releases](../../releases) (or use **Code → Download ZIP** / `git clone`).
 2. Copy `custom_components/beszel_machine_card` into your Home Assistant `config/custom_components/` folder.
 3. Restart Home Assistant.
-4. Go to **Settings → Devices & services → Add integration** and search for **Home Assistant Beszel Agent Integration**.
 
-The cards are loaded by the integration itself — no Lovelace resource to add. To update, replace the folder, restart, and hard-refresh your browser.
+Then go to **Settings → Devices & services → Add integration** and search for **Home Assistant Beszel Agent Integration**.
+
+The cards are loaded by the integration itself — no Lovelace resource to add. After an update, restart and hard-refresh your browser.
 
 ## Connect your Hub
 
@@ -48,7 +55,7 @@ Enter the Hub address Home Assistant can reach, then sign in with your Beszel ac
 | ![Connect to Beszel — Hub URL](docs/images/beszel-setup-hub-url.jpg) | ![Beszel account](docs/images/beszel-setup-account.jpg) |
 
 - Use a normal Beszel user (not a PocketBase `_superusers` account). A readonly user with access to the systems you need is enough.
-- HTTPS is recommended if the Hub is reachable beyond your LAN.
+- HTTPS is recommended if the Hub is reachable beyond your LAN. Home Assistant shows a repair warning for a plain `http://` address outside your local network.
 - If the session can't be refreshed, Home Assistant will ask you to sign in again.
 
 ## Cards
@@ -136,6 +143,10 @@ When Beszel collects them, these are imported too:
 ## Credits
 
 This project builds on **[Beszel](https://github.com/henrygd/beszel)** by [henrygd](https://github.com/henrygd) and its contributors (MIT). The Beszel agent collects the data and the Hub stores it; this integration only displays it in Home Assistant. Docs: <https://beszel.dev/>. If you find this useful, consider starring Beszel too.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) to report a vulnerability privately.
 
 ## License
 

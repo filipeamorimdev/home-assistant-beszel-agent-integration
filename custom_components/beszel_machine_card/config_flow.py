@@ -79,6 +79,10 @@ class BeszelMachineCardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
+            description_placeholders={
+                "lan_example": "http://192.168.1.10:8090",
+                "https_example": "https://beszel.example.com",
+            },
             data_schema=vol.Schema(
                 {
                     vol.Required(

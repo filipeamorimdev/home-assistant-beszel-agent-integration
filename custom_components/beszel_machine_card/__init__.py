@@ -11,7 +11,9 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import BeszelApiClient, BeszelApiError, BeszelAuthError
@@ -25,11 +27,18 @@ from .const import (
     TABLE_CARD_URL,
 )
 from .coordinator import BeszelDataUpdateCoordinator
-from .helpers import is_legacy_lovelace_resource, lovelace_resource_path
+from .helpers import (
+    is_insecure_remote_url,
+    is_legacy_lovelace_resource,
+    lovelace_resource_path,
+)
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 FRONTEND_REGISTERED = f"{DOMAIN}_frontend_registered"
 _LOGGER = logging.getLogger(__name__)
+
+# Set up from the UI only; no YAML options.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 CARD_URLS = (
     (CARD_URL, FRONTEND_DIR / "beszel-machine-card.js"),
@@ -151,6 +160,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not isinstance(token, str) or not token:
         raise ConfigEntryAuthFailed("A Beszel access token is required")
 
+    _async_update_insecure_url_issue(hass, entry)
+
     client = BeszelApiClient(
         async_get_clientsession(hass),
         entry.data[CONF_URL],
@@ -160,7 +171,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+    # No update listener: the token loop rewrites entry data on every refresh
+    # and a listener would reload the whole entry each time. Reauth reloads
+    # through async_update_reload_and_abort.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_create_background_task(
         hass,
@@ -218,9 +231,44 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the coordinator after the config entry changes."""
-    await hass.config_entries.async_reload(entry.entry_id)
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Drop repair issues that belong to a removed entry."""
+    ir.async_delete_issue(hass, DOMAIN, _insecure_url_issue_id(entry))
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: ConfigEntry, device: dr.DeviceEntry
+) -> bool:
+    """Allow deleting a device whose Beszel system is no longer reported."""
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    active = set(coordinator.data or {}) if coordinator is not None else set()
+    for domain, identifier in device.identifiers:
+        if domain != DOMAIN:
+            continue
+        if str(identifier).startswith("hub_") or identifier in active:
+            return False
+    return True
+
+
+def _insecure_url_issue_id(entry: ConfigEntry) -> str:
+    return f"insecure_url_{entry.entry_id}"
+
+
+def _async_update_insecure_url_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Warn when the password and token travel over plain HTTP off the LAN."""
+    issue_id = _insecure_url_issue_id(entry)
+    if not is_insecure_remote_url(entry.data[CONF_URL]):
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="insecure_url",
+        translation_placeholders={"url": entry.data[CONF_URL]},
+    )
 
 
 def async_remove_stale_devices(

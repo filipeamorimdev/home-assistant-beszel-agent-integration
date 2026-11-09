@@ -404,22 +404,19 @@ class BeszelSensor(CoordinatorEntity[BeszelDataUpdateCoordinator], SensorEntity)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Expose host/port/agent on the status sensor for the offline card link."""
+        """Expose agent version and thread/core counts on the status sensor.
+
+        The agent host and port are left out: every Home Assistant user can
+        read state attributes and the recorder keeps them.
+        """
         if self.entity_description.key != "status":
             return None
         item = self.coordinator.data.get(self._system_id)
         if not item:
             return None
-        record = item.get("record", {})
         info = item.get("info", {})
         attrs: dict[str, Any] = {}
-        host = record.get("host")
-        port = record.get("port")
         agent = info.get("v")
-        if host:
-            attrs["host"] = host
-        if port is not None and port != "":
-            attrs["port"] = port
         if agent:
             attrs["agent_version"] = str(agent)
         # Hardware threads/cores let the cards colour load average like Beszel.
