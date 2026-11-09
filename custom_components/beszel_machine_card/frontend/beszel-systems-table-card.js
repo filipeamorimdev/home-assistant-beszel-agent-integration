@@ -1,5 +1,5 @@
 /**
- * beszel-systems-table-card.js — bundled with the Home Assistant Beszel Agent Integration.
+ * beszel-systems-table-card.js — bundled with the Beszel Agent Integration.
  *
  * Multi-system overview modelled on Beszel's "All Systems" page: a sortable
  * table (layout: table), Beszel's card grid (layout: grid), or automatic
@@ -34,7 +34,7 @@ import {
   renderDetailRows,
   temperatureLevel,
   thresholds,
-} from './beszel-common.js?v=0.1.2';
+} from './beszel-common.js?v=0.1.3';
 
 // Beszel's column order.
 const TABLE_COLUMNS = [
@@ -755,7 +755,7 @@ if (!window.customCards.some(card => card.type === 'beszel-systems-table-card'))
   window.customCards.push({
     type: 'beszel-systems-table-card',
     name: 'Beszel Agent Systems Table',
-    description: 'Multi-system overview (table or Beszel-style grid) from the Home Assistant Beszel Agent Integration.',
+    description: 'Multi-system overview (table or Beszel-style grid) from the Beszel Agent Integration.',
     preview: false,
   });
 }

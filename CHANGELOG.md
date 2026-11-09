@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- The integration is now called **Beszel Agent Integration** (was "Home Assistant Beszel Agent Integration"). Existing setups, devices and entities are unchanged.
+- The integration icon is now the Beszel logo.
+
+## [0.1.2] - 2026-11-09
+
 ### Added
 - **HACS support** as a custom repository (`hacs.json`), an integration icon (shown by Home Assistant 2026.3+), and CI that runs the tests, `hassfest` and the HACS validator.
 - Drives (SMART), ZFS pool detail, containers, systemd services, network monitors and Beszel alerts are now imported as sensors on each system's device. Per-container, per-service, per-vdev and per-dataset sensors are disabled by default.

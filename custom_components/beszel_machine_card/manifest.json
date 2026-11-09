@@ -1,6 +1,6 @@
 {
   "domain": "beszel_machine_card",
-  "name": "Home Assistant Beszel Agent Integration",
+  "name": "Beszel Agent Integration",
   "categories": [
     "computers_network.monitoring"
   ],
@@ -18,5 +18,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/filipeamorimdev/home-assistant-beszel-agent-integration/issues",
   "requirements": [],
-  "version": "0.1.2"
+  "version": "0.1.3"
 }
