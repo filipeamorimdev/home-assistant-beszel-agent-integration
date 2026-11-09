@@ -1,6 +1,9 @@
 {
   "domain": "beszel_machine_card",
   "name": "Home Assistant Beszel Agent Integration",
+  "categories": [
+    "computers_network.monitoring"
+  ],
   "codeowners": [
     "@filipeamorimdev"
   ],
