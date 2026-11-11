@@ -33,6 +33,16 @@ POLLED_COLLECTIONS = ("containers", "systemd_services", "network_monitors")
 REALTIME_EXTRA_COLLECTIONS = ("smart_devices", "zfs_pools", "alerts")
 
 
+def _clean_version(value: Any) -> str | None:
+    """Return a version string such as ``0.21.1`` (no ``v``), or None."""
+    if not isinstance(value, str):
+        return None
+    version = value.strip().removeprefix("v").strip()
+    if not version or len(version) > 64 or not version[0].isdigit():
+        return None
+    return version
+
+
 def group_extra_records(
     collection: str, records: list[dict[str, Any]]
 ) -> dict[str, dict[str, dict[str, Any]]]:
@@ -166,6 +176,35 @@ class BeszelApiClient:
             ):
                 return records
             page += 1
+
+    async def async_get_hub_info(self) -> dict[str, Any]:
+        """Return the Hub's installed version and whether it checks for updates.
+
+        Only ``v`` and ``cu`` are kept: the response also carries the Hub's
+        public SSH key, which Home Assistant has no use for.
+        """
+        payload = await self._request("GET", "/api/beszel/info")
+        if not isinstance(payload, Mapping):
+            raise BeszelApiError("Beszel returned an unexpected info response")
+        return {
+            "version": _clean_version(payload.get("v")),
+            "check_updates": payload.get("cu") is True,
+        }
+
+    async def async_get_hub_update(self) -> dict[str, Any]:
+        """Return the newer Hub release, if any.
+
+        The Hub only serves this when it runs with ``CHECK_UPDATES=true``; it
+        answers with an empty version when it is already up to date.
+        """
+        payload = await self._request("GET", "/api/beszel/update", optional=True)
+        if not isinstance(payload, Mapping):
+            raise BeszelApiError("Beszel returned an unexpected update response")
+        url = payload.get("url")
+        return {
+            "version": _clean_version(payload.get("v")),
+            "url": url if isinstance(url, str) and url.startswith("https://") else None,
+        }
 
     async def async_get_systems(self) -> list[dict[str, Any]]:
         """Return every system visible to the authenticated Beszel user."""

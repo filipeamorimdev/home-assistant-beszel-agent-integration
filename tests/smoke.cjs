@@ -71,7 +71,7 @@ function makeContext() {
 }
 
 const machine = makeContext();
-vm.runInContext(bundle(source, 'globalThis.CardUnderTest = BeszelMachineCard; globalThis.EditorUnderTest = BeszelMachineCardEditor; globalThis.common = { formatRate, formatPercent, formatUptimeLong, temperatureReading, systemEntitiesFromSeeds, systemEntitiesForDevice, advancedSensorGroup, entityLabel, batteryLevel, rateBytes };'), machine, { filename: 'machine-card.bundle.js' });
+vm.runInContext(bundle(source, 'globalThis.CardUnderTest = BeszelMachineCard; globalThis.EditorUnderTest = BeszelMachineCardEditor; globalThis.common = { formatRate, formatLoads, formatUsedTotal, renderDetailRows, formatRateState, formatRateTotal, formatBytes, entityReading, buildSystemModel, formatPercent, formatUptimeLong, temperatureReading, systemEntitiesFromSeeds, systemEntitiesForDevice, advancedSensorGroup, entityLabel, batteryLevel, rateBytes, cardLanguage, translate, translateMetricName, statusText, LANGUAGES, LANGUAGE_NAMES };'), machine, { filename: 'machine-card.bundle.js' });
 const table = makeContext();
 vm.runInContext(bundle(tableSource, 'globalThis.TableCardUnderTest = BeszelSystemsTableCard; globalThis.TableEditorUnderTest = BeszelSystemsTableCardEditor;'), table, { filename: 'table-card.bundle.js' });
 
@@ -87,6 +87,61 @@ assert.equal(c.formatUptimeLong(7 * 86400 + 3600), '7 days');
 assert.equal(c.formatUptimeLong(86400), '1 day');
 assert.equal(c.formatUptimeLong(3700), '1h 1m');
 assert.equal(c.rateBytes({ state: '8', attributes: { unit_of_measurement: 'kbit/s' } }), 1000);
+// A unit picked in the entity's settings is shown as picked; the
+// integration's own B/s and B are scaled the way Beszel shows them.
+const rate = (state, unit) => ({ state: String(state), attributes: { unit_of_measurement: unit } });
+assert.equal(c.formatRateState(rate(132096, 'B/s')), '129 KiB/s');
+assert.equal(c.formatRateState(rate(0.16, 'MB/s')), '0.16 MB/s');
+assert.equal(c.formatRateState(rate(0.1649, 'MB/s'), 3), '0.165 MB/s', 'display precision is honoured');
+assert.equal(c.formatRateState(rate(0, 'Mbit/s')), '0.00 Mbit/s', 'real zero kept');
+assert.equal(c.formatRateState(rate('unknown', 'MB/s')), '');
+assert.equal(c.formatRateTotal(rate(0.16, 'MB/s'), rate(0.11, 'MB/s')), '0.27 MB/s');
+assert.equal(c.formatRateTotal(rate(1, 'MB/s'), rate(1000, 'kB/s')), '1.91 MiB/s', 'mixed units fall back to Beszel scaling');
+assert.equal(c.formatRateTotal(rate(1024, 'B/s'), rate('unavailable', 'B/s')), '1.00 KiB/s');
+assert.equal(c.formatRateTotal(undefined, undefined), '');
+assert.equal(c.formatBytes(2861497669), '2.66 GiB');
+assert.deepEqual({ ...c.entityReading(rate(105693, 'B/s')) }, { value: '103', unit: 'KiB/s' });
+assert.deepEqual({ ...c.entityReading(rate(88633316, 'B')) }, { value: '84.53', unit: 'MiB' });
+assert.deepEqual({ ...c.entityReading(rate(0.1, 'MB/s')) }, { value: '0.10', unit: 'MB/s' });
+assert.deepEqual({ ...c.entityReading(rate(88633316, 'B'), 0) }, { value: '85', unit: 'MiB' }, 'precision applies to scaled bytes');
+assert.equal(c.formatRateState(rate(1593835, 'B/s'), 1), '1.5 MiB/s', 'precision applies to scaled B/s');
+assert.deepEqual({ ...c.entityReading(rate(1.5, 'GiB')) }, { value: '1.5', unit: 'GiB' });
+assert.deepEqual({ ...c.entityReading(rate(1.5, 'GiB'), 2) }, { value: '1.50', unit: 'GiB' });
+assert.deepEqual({ ...c.entityReading(rate(2373, 'rpm')) }, { value: '2373', unit: 'rpm' });
+assert.equal(c.entityReading(rate('unknown', 'B')), null);
+{
+  const states = { 'sensor.a_rx': rate(0.16, 'MB/s'), 'sensor.a_tx': rate(0.11, 'MB/s') };
+  const model = c.buildSystemModel({ states }, { network_received_speed: 'sensor.a_rx', network_sent_speed: 'sensor.a_tx' });
+  assert.equal(model.rxText, '0.16 MB/s');
+  assert.equal(model.txText, '0.11 MB/s');
+  assert.equal(model.netText, '0.27 MB/s');
+  assert.equal(model.rx, 160000, 'sorting still uses bytes');
+}
+// Display precision from the sensor's settings applies to every reading.
+assert.equal(c.temperatureReading(rate(64.3, '°C'), 0).text, '64 °C');
+assert.equal(c.temperatureReading(rate(64.3, '°C')).text, '64.3 °C');
+assert.equal(c.formatPercent(16.12, 0), '16%');
+assert.equal(c.formatPercent(0, 3), '0.000%', 'real zero kept');
+{
+  const ids = { cpu_usage: 'sensor.p_cpu', cpu_temperature: 'sensor.p_temp', load_1m: 'sensor.p_l1', load_5m: 'sensor.p_l5', memory_used: 'sensor.p_mu', memory_total: 'sensor.p_mt' };
+  const hass = {
+    states: {
+      'sensor.p_cpu': rate(28.34, '%'), 'sensor.p_temp': rate(64.3, '°C'), 'sensor.p_l1': rate(0.84, ''),
+      'sensor.p_l5': rate(0.73, ''), 'sensor.p_mu': rate(1.5, 'GiB'), 'sensor.p_mt': rate(3.9, 'GiB'),
+    },
+    entities: {
+      'sensor.p_cpu': { display_precision: 0 }, 'sensor.p_temp': { display_precision: 0 },
+      'sensor.p_l1': { display_precision: 1 }, 'sensor.p_mu': { display_precision: 2 },
+    },
+  };
+  const model = c.buildSystemModel(hass, ids);
+  assert.equal(model.temperature.text, '64 °C');
+  assert.equal(c.formatLoads(model.loads, model.digits.loads), '0.8 0.73 –');
+  assert.equal(c.formatUsedTotal(model.memoryUsed, model.memoryTotal), '1.50 / 3.9 GiB');
+  const rows = c.renderDetailRows(model, {});
+  assert.match(rows, />28%</, 'detail rows use the display precision');
+  assert.match(rows, />64 °C</);
+}
 const fahrenheit = c.temperatureReading({ state: '150.8', attributes: { unit_of_measurement: '°F' } });
 assert.equal(fahrenheit.text, '150.8 °F');
 assert.ok(Math.abs(fahrenheit.celsius - 66) < 0.01, 'thresholds use Celsius even when HA shows °F');
@@ -141,6 +196,51 @@ for (const [uniqueKey, group] of [
   const id = `sensor.x_${uniqueKey}`;
   const reg = new Map([[id, { unique_id: `abc123_${uniqueKey}` }]]);
   assert.equal(c.advancedSensorGroup(id, reg)?.key, group, uniqueKey);
+}
+// Card language: per card, English for unset or unknown, English fills gaps.
+assert.equal(c.cardLanguage({}), 'en');
+assert.equal(c.cardLanguage({ language: 'pt' }), 'pt');
+assert.equal(c.cardLanguage({ language: 'pt-BR' }), 'pt');
+assert.equal(c.cardLanguage({ language: 'xx' }), 'en');
+assert.equal(c.translate('pt', 'memory'), 'Memória');
+assert.equal(c.translate('pt', 'cpu'), 'CPU', 'missing keys fall back to English');
+assert.equal(c.translate('pt', 'nope', 'raw'), 'raw');
+assert.equal(c.statusText('de', 'paused'), 'pausiert');
+assert.equal(c.statusText('de', 'odd'), 'odd', 'unknown statuses are shown as reported');
+assert.equal(c.formatUptimeLong(86400, 'fr'), '1 jour');
+assert.equal(c.formatUptimeLong(3 * 86400), '3 days');
+for (const language of c.LANGUAGES) assert.ok(c.LANGUAGE_NAMES[language], language);
+// Names of expanded and collection metrics are rebuilt in the card language;
+// the user's own part (sda, nginx…) and renamed entities stay as they are.
+for (const [name, pt, de] of [
+  ['CPU core 3', 'Núcleo da CPU 3', 'CPU-Kern 3'],
+  ['Drive sda temperature', 'Unidade sda – temperatura', 'Laufwerk sda – Temperatur'],
+  ['ZFS pool tank mirror-0 state', 'Pool ZFS tank mirror-0 – estado', 'ZFS-Pool tank mirror-0 – Status'],
+  ['Filesystem /mnt/x read total', 'Sistema de ficheiros /mnt/x – total lido', 'Dateisystem /mnt/x – gelesen gesamt'],
+  ['Container nginx CPU', 'Contentor nginx – CPU', 'Container nginx – CPU'],
+  ['Service sshd.service sub-state', 'Serviço sshd.service – subestado', 'Dienst sshd.service – Unterstatus'],
+  ['Monitor HTTP example.com packet loss (1 h)', 'Monitor HTTP example.com – perda de pacotes (1 h)', 'Monitor HTTP example.com – Paketverlust (1 h)'],
+  ['Eth0 sent speed', 'Eth0 – velocidade de envio', 'Eth0 – Sendegeschwindigkeit'],
+  ['Disk full alert', 'Disk full – alerta', 'Disk full – Warnung'],
+  ['Temperature alert', 'Temperatura – alerta', 'Temperatur – Warnung'],
+  ['Memory alert', 'Memória – alerta', 'Speicher – Warnung'],
+  ['Fan cpu_fan', 'Ventoinha cpu_fan', 'Lüfter cpu_fan'],
+  ['Disk read latency', 'Disco – latência de leitura', 'Festplatte – Leselatenz'],
+  ['Containers running', 'Contentores em execução', 'Laufende Container'],
+  ['Memory total', 'RAM total', 'RAM gesamt'],
+  ['My renamed thing', 'My renamed thing', 'My renamed thing'],
+  ['Swap <usage>', 'Swap <usage>', 'Swap <usage>'],
+]) {
+  assert.equal(c.translateMetricName('pt', name), pt);
+  assert.equal(c.translateMetricName('de', name), de);
+  assert.equal(c.translateMetricName('en', name), name, 'English cards keep the entity name');
+}
+// Every name metrics.py can build has words here: no English reading is left
+// on a translated card. Keep this list in step with metrics.py.
+const metricsSource = fs.readFileSync(path.join(root, 'metrics.py'), 'utf8');
+for (const [, reading] of metricsSource.matchAll(/f"\{label\} (?:\{(?:title|vname)\} )?([A-Za-z][^"{}]*)"/g)) {
+  const translated = c.translateMetricName('pt', `Drive x ${reading}`);
+  assert.notEqual(translated, `Drive x ${reading}`, `metrics.py reading "${reading}" has no translation rule`);
 }
 console.log('Shared helper tests passed.');
 
@@ -232,13 +332,45 @@ assert.match(html, /cache 1\.0 GiB/);
 assert.doesNotMatch(html, /8\.1 \/ 15\.6/);
 assert.doesNotMatch(html, /Memory cache/, 'selected cache merges into the RAM tile');
 
+// Network: Beszel's combined total by default, ↓ / ↑ when split, in every layout.
+card.setConfig({ device_id: 'dev1' });
+html = card.shadowRoot.innerHTML;
+assert.match(html, /title="↓ 741 KiB\/s  ↑ 617 KiB\/s">⇅ 1\.33 MiB\/s/, 'compact shows the combined total');
+card.setConfig({ device_id: 'dev1', split_network: true });
+html = card.shadowRoot.innerHTML;
+assert.match(html, /<span>↓ 741 KiB\/s<\/span><span>↑ 617 KiB\/s<\/span>/, 'compact split');
+assert.doesNotMatch(html, /⇅/);
+card.setConfig({ device_id: 'dev1', style: 'terminal' });
+html = card.shadowRoot.innerHTML;
+assert.match(html, />net  <\/td><td class="b">[^<]*<\/td><td class="v">1\.33 MiB\/s</, 'terminal combined total');
+card.setConfig({ device_id: 'dev1', style: 'terminal', split_network: true });
+html = card.shadowRoot.innerHTML;
+assert.match(html, />rx   <\/td><td class="b">[^<]*<\/td><td class="v">741 KiB\/s</);
+assert.match(html, />tx   <\/td><td class="b">[^<]*<\/td><td class="v">617 KiB\/s</);
+
+// show_empty_rows keeps sensors without a value (blank, never zero) in every layout.
+card.setConfig({ device_id: 'dev1', ...editorSlots, entity_cpu: '', show_empty_rows: true });
+html = card.shadowRoot.innerHTML;
+assert.match(html, /<div class="metric-label">CPU<\/div><span class="metric-val"><\/span><span class="metric-unit"><\/span>/, 'compact keeps an empty CPU tile');
+assert.match(html, />GPU</);
+card.setConfig({ device_id: 'dev1', ...editorSlots, entity_cpu: '', style: 'terminal', show_empty_rows: true });
+html = card.shadowRoot.innerHTML;
+assert.match(html, />cpu  <\/td><td class="b">\[\.+\]<\/td><td class="v"><\/td>/, 'terminal keeps an empty cpu row');
+assert.match(html, />temp <\/td><td class="b"> +<\/td><td class="v"><\/td>/);
+card.setConfig({ device_id: 'dev1', extra_entities: ['sensor.missing_metric'], layout: 'detailed', show_empty_rows: true });
+assert.match(card.shadowRoot.innerHTML, /class="bz-row bz-extra"/, 'detailed keeps an empty extra');
+card.setConfig({ device_id: 'dev1', extra_entities: ['sensor.missing_metric'], layout: 'detailed' });
+assert.doesNotMatch(card.shadowRoot.innerHTML, /class="bz-row bz-extra"/, 'empty extras hide by default');
+assert.match(source, /Show sensors without a value/);
+assert.doesNotMatch(source, /Detailed list: keep empty rows|Detailed list: split network/);
+
 // Detailed layout follows Beszel's list.
 card.setConfig({ device_id: 'dev1', layout: 'detailed', title: '<img src=x onerror=alert(1)>' });
 html = card.shadowRoot.innerHTML;
 assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
 assert.doesNotMatch(html, /<img src=x/);
 assert.match(html, /class="bz-rows"/);
-assert.match(html, /CPU:<\/span><span class="bz-value">16\.1%/);
+assert.match(html, /CPU:<\/span><span class="bz-cell"><span class="bz-value">16\.1%<\/span><span class="bz-meter">/);
 assert.match(html, /Load Avg:<\/span><span class="bz-value bz-wide"><span class="bz-dot bz-ok"><\/span>1\.01 0\.92 1\.15/);
 assert.match(html, /Net:<\/span><span class="bz-value bz-wide"><span title="↓ 741 KiB\/s  ↑ 617 KiB\/s">1\.33 MiB\/s/);
 assert.match(html, /Uptime:<\/span><span class="bz-value bz-wide">7 days/);
@@ -247,7 +379,7 @@ assert.match(html, /class="bz-menu"/);
 card.setConfig({ device_id: 'dev1', layout: 'detailed', show_empty_rows: true, split_network: true });
 html = card.shadowRoot.innerHTML;
 assert.match(html, /GPU:<\/span><span class="bz-value bz-wide"><\/span>/);
-assert.match(html, /↓ 741 KiB\/s  ↑ 617 KiB\/s/);
+assert.match(html, /<span class="bz-line">↓ 741 KiB\/s<\/span><span class="bz-line">↑ 617 KiB\/s<\/span>/, 'split network puts ↓ and ↑ on separate lines');
 assert.doesNotMatch(html, /NaN|—%|>unknown<|>unavailable</);
 
 // Legacy configs: view: compact was the icon list → detailed; view: full → tiles.
@@ -328,6 +460,8 @@ card.hass = { ...redrawHass, states: { ...redrawHass.states, 'sensor.unrelated':
 assert.equal(redraws, 0, 'unrelated updates should not redraw the card');
 card.hass = { ...redrawHass, states: { ...redrawHass.states, 'sensor.truenas_cpu_usage': { state: '12', attributes: {} } } };
 assert.equal(redraws, 1, 'relevant updates must redraw the card');
+card.hass = { ...redrawHass, entities: { ...redrawHass.entities } };
+assert.equal(redraws, 2, 'a registry change (display precision) must redraw the card');
 card._render = renderBefore;
 
 // Terminal style stays a plain monospace table.
@@ -345,6 +479,35 @@ assert.equal(card.shadowRoot.innerHTML, '');
 card.preview = true;
 assert.match(card.shadowRoot.innerHTML, /system offline/);
 assert.match(source, /Hide the card while the system is offline/);
+// Language is a card option: two cards on the same data, two languages.
+const english = new machine.CardUnderTest();
+english.setConfig({ device_id: 'dev1', layout: 'detailed', extra_entities: ['sensor.truenas_memory_total'] });
+english.hass = machineHass();
+const portuguese = new machine.CardUnderTest();
+portuguese.setConfig({ device_id: 'dev1', layout: 'detailed', language: 'pt', extra_entities: ['sensor.truenas_memory_total'] });
+portuguese.hass = machineHass();
+assert.match(english.shadowRoot.innerHTML, />Memory:</);
+assert.match(english.shadowRoot.innerHTML, />Memory total:</, 'English cards keep the entity name');
+assert.match(english.shadowRoot.innerHTML, /7 days/);
+assert.match(portuguese.shadowRoot.innerHTML, />Memória:</);
+assert.match(portuguese.shadowRoot.innerHTML, />Carga média:</);
+assert.match(portuguese.shadowRoot.innerHTML, /7 dias/);
+assert.match(portuguese.shadowRoot.innerHTML, />RAM total:</, 'known extras use the card language');
+assert.match(portuguese.shadowRoot.innerHTML, /title="Abrir dispositivo"/);
+const perCore = machineHass();
+perCore.states['sensor.truenas_cpu_core_0'] = { state: '12', attributes: { unit_of_measurement: '%', friendly_name: 'truenas CPU core 0' } };
+perCore.states['sensor.truenas_drive_sda_temperature'] = { state: '35', attributes: { unit_of_measurement: '°C', friendly_name: 'truenas Drive <sda> temperature' } };
+for (const id of ['sensor.truenas_cpu_core_0', 'sensor.truenas_drive_sda_temperature']) {
+  perCore.entities[id] = { entity_id: id, device_id: 'dev1', platform: 'beszel_machine_card' };
+}
+portuguese.setConfig({ device_id: 'dev1', layout: 'detailed', language: 'pt', extra_entities: ['sensor.truenas_cpu_core_0', 'sensor.truenas_drive_sda_temperature'] });
+portuguese.hass = perCore;
+assert.match(portuguese.shadowRoot.innerHTML, />Núcleo da CPU 0:</, 'per-core extras follow the card language');
+assert.match(portuguese.shadowRoot.innerHTML, />Unidade &lt;sda&gt; – temperatura:</, 'translated names stay escaped');
+assert.doesNotMatch(portuguese.shadowRoot.innerHTML, />Memory:<|7 days/);
+portuguese.setConfig({ device_id: 'dev1', language: 'pt' });
+assert.match(portuguese.shadowRoot.innerHTML, /bz-ok"><\/span>ativo</, 'status follows the card language');
+assert.match(portuguese.shadowRoot.innerHTML, />Disco</);
 console.log('Beszel Agent Machine Card smoke tests passed.');
 
 // ─── Machine card editor ─────────────────────────────────────────────────────
@@ -431,6 +594,14 @@ for (const echoConfig of [false, true]) {
   assert.equal(switching._config.entity_cpu, '');
   assert.equal(controls.get('autofill').disabled, true);
   assert.equal(pickers.get('entity_cpu').disabled, true);
+
+  // Terminal style is a Layout dropdown choice, not a separate checkbox.
+  switching._config = { ...switching._config, layout: 'detailed', style: 'terminal' };
+  switching._syncEditorFromConfig();
+  assert.equal(controls.get('layout').value, 'terminal');
+  switching._config = { ...switching._config, style: undefined };
+  switching._syncEditorFromConfig();
+  assert.equal(controls.get('layout').value, 'detailed');
 }
 assert.match(source, /Additional Beszel metrics/);
 assert.match(source, /advanced-preset/);
@@ -440,7 +611,8 @@ assert.match(source, /_onlyAdvancedConfigChanged/);
 assert.match(source, /data-group=/);
 assert.match(source, /id="layout"/);
 assert.match(source, /Detailed list \(Beszel style\)/);
-assert.match(source, /Terminal style/);
+assert.match(source, /<option value="terminal">Terminal/);
+assert.doesNotMatch(source, /id="terminal-style"/);
 assert.match(source, /Beszel Agent Machine Card/);
 assert.doesNotMatch(source, /<mwc-button/);
 assert.doesNotMatch(source, /beszel-card|preferLiveEntity|Beszel Card \(legacy\)/);
@@ -540,7 +712,8 @@ tableHtml = tableCard.shadowRoot.innerHTML;
 assert.match(tableHtml, /data-device="srv"/, 'srv has critical memory and a failed service');
 assert.doesNotMatch(tableHtml, /data-device="nas"/, 'all-green nas is hidden');
 assert.equal(tableCard.getCardSize(), 2);
-hass.states['sensor.srv_status'].state = 'down';
+// Home Assistant replaces a state object when it changes; the cards rely on it.
+hass = { ...hass, states: { ...hass.states, 'sensor.srv_status': { ...hass.states['sensor.srv_status'], state: 'down' } } };
 tableCard.hass = hass;
 assert.doesNotMatch(tableCard.shadowRoot.innerHTML, /data-device="srv"/, 'offline systems are hidden even with hide_when_offline off');
 assert.equal(tableCard.hidden, true, 'no alerts hides the whole card');
@@ -732,7 +905,7 @@ tableEditor.hass = tableHass();
 const ed = tableEditor.shadowRoot;
 const editorHtml = ed.innerHTML;
 // Every setup option is present.
-for (const id of ['title', 'layout', 'hub-status', 'hide-offline', 'only-alerts', 'hide-empty-columns', 'split-network', 'terminal-style', 'systems', 'columns']) {
+for (const id of ['title', 'layout', 'hub-status', 'hide-offline', 'only-alerts', 'hide-empty-columns', 'split-network', 'systems', 'columns']) {
   assert.match(editorHtml, new RegExp(`id="${id}"`), `editor has #${id}`);
 }
 assert.match(editorHtml, /Show only systems with alerts \(hide the card when none\)/);
@@ -749,13 +922,25 @@ assert.ok(tableChecks.length >= 8, 'table editor renders native checkboxes');
 assert.equal((editorHtml.match(/<label class="check"><input type="checkbox"[^>]*><span>[^<]+<\/span><\/label>/g) || []).length, tableChecks.length, 'every table editor checkbox has visible label text');
 assert.equal(ed.getElementById('title').value, 'Homelab');
 assert.equal(ed.getElementById('layout').value, 'auto');
+assert.equal(ed.getElementById('language').value, 'en', 'language defaults to English');
+assert.match(editorHtml, /<option value="pt">Português<\/option>/);
 assert.equal(ed.getElementById('hub-status').checked, true);
 assert.equal(ed.getElementById('hide-offline').checked, true);
 assert.equal(ed.getElementById('only-alerts').checked, false, 'only_alerts defaults off');
 assert.equal(ed.getElementById('hide-offline').disabled, false);
 assert.equal(ed.getElementById('hide-empty-columns').checked, true);
 assert.equal(ed.getElementById('split-network').checked, false);
-assert.equal(ed.getElementById('terminal-style').checked, false);
+assert.doesNotMatch(editorHtml, /id="terminal-style"/, 'terminal style is a Layout choice, not a checkbox');
+assert.match(editorHtml, /<option value="terminal">Terminal/);
+// Picking Terminal sets style: terminal; picking another layout clears it.
+const layoutSelect = ed.getElementById('layout');
+layoutSelect.value = 'terminal';
+layoutSelect.listeners.change.forEach(fn => fn());
+assert.equal(editorEvents.at(-1).style, 'terminal');
+layoutSelect.value = 'grid';
+layoutSelect.listeners.change.forEach(fn => fn());
+assert.equal(editorEvents.at(-1).layout, 'grid');
+assert.equal('style' in editorEvents.at(-1), false);
 assert.equal(ed.querySelector('[data-column="cpu"]').checked, true);
 assert.equal(ed.querySelector('[data-column="memory_total"]').checked, false);
 // Toggling only_alerts emits it and disables the redundant offline toggle.
@@ -785,6 +970,25 @@ nasBox.listeners.change.forEach(fn => fn());
 assert.equal(editorEvents.length, eventCount, 'unchecking the last system emits nothing');
 assert.equal(nasBox.checked, true, 'the last system stays checked');
 console.log('Systems table editor tests passed.');
+
+// Language is a card option: headers, cells and messages follow it.
+const germanTable = new table.TableCardUnderTest();
+germanTable.setConfig({ layout: 'table', language: 'de', hide_when_offline: false, columns: ['cpu', 'memory', 'services', 'uptime', 'fan'] });
+germanTable.hass = tableHass();
+const germanHtml = germanTable.shadowRoot.innerHTML;
+assert.match(germanHtml, /<\/ha-icon>Speicher</);
+assert.match(germanHtml, /<\/ha-icon>Dienste</);
+assert.match(germanHtml, />Lüfter U\/min</);
+assert.match(germanHtml, /\(fehlgeschlagen: 1\)/);
+assert.match(germanHtml, /1 Tag</);
+assert.match(germanHtml, /class="status-label">online</);
+assert.doesNotMatch(germanHtml, />Memory<|>Services<|failed:|1 day/);
+germanTable.setConfig({ layout: 'grid', language: 'de' });
+assert.match(germanTable.shadowRoot.innerHTML, />Speicher:</, 'grid rows are translated too');
+const languageSelect = ed.getElementById('language');
+languageSelect.value = 'fr';
+languageSelect.listeners.change.forEach(fn => fn());
+assert.equal(editorEvents.at(-1).language, 'fr');
 
 assert.doesNotMatch(tableSource, /callWS|beszel-overview-card|Beszel Overview \(legacy\)/);
 console.log('Beszel Agent Systems Table smoke tests passed.');

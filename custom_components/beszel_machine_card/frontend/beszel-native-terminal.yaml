@@ -11,21 +11,21 @@ content: |-
   {%- set refresh = now().minute -%}
   {%- set ids = integration_entities('beszel_machine_card') -%}
   {%- set selected_device = device_id(target_entity) if target_entity else none -%}
-  {%- set ns = namespace(devices=[], lines=[]) -%}
-  {%- for entity in expand(ids) -%}
+  {# Expand once: one pass for the device order, one for the sorted rows;
+     each device then only filters the prepared rows. #}
+  {%- set entities = expand(ids) -%}
+  {%- set ns = namespace(devices=[], rows=[], lines=[]) -%}
+  {%- for entity in entities -%}
     {%- set device = device_id(entity.entity_id) -%}
     {%- if device and device not in ns.devices and
           (not target_entity or (target_entity in ids and device == selected_device)) -%}
       {%- set ns.devices = ns.devices + [device] -%}
     {%- endif -%}
   {%- endfor -%}
-  {%- for device in ns.devices -%}
-    {%- set name = device_attr(device, 'name_by_user') or device_attr(device, 'name') or device -%}
-    {%- set name = name | string | replace('\n', ' ') | replace('\r', ' ') -%}
-    {%- set rows = namespace(lines=[]) -%}
-    {%- for entity in expand(ids) | sort(attribute='name') -%}
-      {%- if device_id(entity.entity_id) == device and
-            (not only_entities or entity.entity_id in only_entities) -%}
+  {%- for entity in entities | sort(attribute='name') -%}
+    {%- set device = device_id(entity.entity_id) -%}
+    {%- if device in ns.devices -%}
+      {%- if not only_entities or entity.entity_id in only_entities -%}
         {%- set label = entity.name | string | replace('\n', ' ') | replace('\r', ' ') -%}
         {%- set value = entity.state -%}
         {%- set unit = entity.attributes.get('unit_of_measurement', '') or '' -%}
@@ -34,11 +34,16 @@ content: |-
           {%- set unit = '' -%}
         {%- endif -%}
         {%- set reading = (value ~ (' ' ~ unit if unit else '')) | replace('\n', ' ') | replace('\r', ' ') -%}
-        {%- set rows.lines = rows.lines + [label ~ ': ' ~ reading] -%}
+        {%- set ns.rows = ns.rows + [{'device': device, 'line': label ~ ': ' ~ reading}] -%}
       {%- endif -%}
-    {%- endfor -%}
-    {%- if rows.lines -%}
-      {%- set ns.lines = ns.lines + ['[ ' ~ name ~ ' ]'] + rows.lines + [''] -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- for device in ns.devices -%}
+    {%- set name = device_attr(device, 'name_by_user') or device_attr(device, 'name') or device -%}
+    {%- set name = name | string | replace('\n', ' ') | replace('\r', ' ') -%}
+    {%- set lines = ns.rows | selectattr('device', 'eq', device) | map(attribute='line') | list -%}
+    {%- if lines -%}
+      {%- set ns.lines = ns.lines + ['[ ' ~ name ~ ' ]'] + lines + [''] -%}
     {%- endif -%}
   {%- endfor -%}
   {%- if not ns.lines -%}

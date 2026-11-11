@@ -42,7 +42,16 @@
   },
   "entity": {
     "sensor": {
-      "status": { "name": "Status" },
+      "status": {
+        "name": "Status",
+        "state": {
+          "up": "Up",
+          "down": "Down",
+          "paused": "Paused",
+          "pending": "Pending",
+          "unknown": "Unknown"
+        }
+      },
       "cpu_usage": { "name": "CPU usage" },
       "memory_usage": { "name": "Memory usage" },
       "disk_usage": { "name": "Disk usage" },
@@ -61,6 +70,9 @@
     },
     "binary_sensor": {
       "hub_connection": { "name": "Connection" }
+    },
+    "update": {
+      "hub_update": { "name": "Update" }
     }
   }
 }

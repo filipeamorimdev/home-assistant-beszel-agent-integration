@@ -19,6 +19,7 @@ from .api import (
     BeszelAuthError,
 )
 from .const import DOMAIN, EXTRAS_POLL_INTERVAL, FALLBACK_POLL_INTERVAL
+from .metrics import Metric, metrics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +41,22 @@ class BeszelDataUpdateCoordinator(DataUpdateCoordinator[dict]):
         self._realtime_activity = asyncio.Event()
         self.realtime_connected = False
         self.last_realtime_event: datetime | None = None
+        self._metric_cache: dict[str, tuple[Any, tuple[Metric, ...]]] = {}
+
+    def metrics_for(self, system_id: str, item: Mapping[str, Any]) -> tuple[Metric, ...]:
+        """Discover a system's metrics once per data change.
+
+        The sensor and binary sensor platforms both ask on every update; the
+        descriptors are rebuilt only when the system's item was replaced.
+        """
+        cached = self._metric_cache.get(system_id)
+        if cached is None or cached[0] is not item:
+            if cached is None:
+                for stale in set(self._metric_cache) - set(self.data or {}):
+                    del self._metric_cache[stale]
+            cached = (item, tuple(metrics(item)))
+            self._metric_cache[system_id] = cached
+        return cached[1]
 
     async def _async_update_data(self) -> dict:
         try:

@@ -1,0 +1,78 @@
+{
+  "title": "Beszel Agent Integration",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Beszel verbinden",
+        "description": "Gib die Adresse deines Beszel Hubs ein (zum Beispiel `{lan_example}` oder `{https_example}`). Home Assistant muss diese URL erreichen können.",
+        "data": {
+          "url": "Beszel-Hub-URL"
+        }
+      },
+      "password": {
+        "title": "Beszel-Konto",
+        "description": "Melde dich mit derselben E-Mail-Adresse bzw. demselben Benutzernamen und Passwort an wie in der Beszel-Weboberfläche. Ein Benutzer mit reinem Lesezugriff reicht aus. Das Passwort wird nur einmal verwendet, um eine Sitzung zu erstellen; Home Assistant speichert das daraus entstehende Zugriffstoken und erneuert es automatisch.",
+        "data": {
+          "username": "E-Mail oder Benutzername",
+          "password": "Passwort"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut mit Beszel verbinden",
+        "description": "Die Beszel-Sitzung fehlt, ist abgelaufen oder wurde abgelehnt. Fahre fort, um dich erneut mit deinem Beszel-Benutzernamen und Passwort anzumelden."
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Beszel Hub fehlgeschlagen",
+      "invalid_url": "Gib eine gültige HTTP- oder HTTPS-URL des Beszel Hubs ein",
+      "invalid_auth": "Ungültiger Benutzername oder ungültiges Passwort. Verwende ein normales Beszel-Benutzerkonto (nicht den PocketBase-Administrator)."
+    },
+    "abort": {
+      "already_configured": "Dieser Beszel Hub ist bereits eingerichtet",
+      "cannot_connect": "Verbindung zum Beszel Hub fehlgeschlagen",
+      "reauth_failed": "Die Beszel-Anmeldung konnte nicht neu gestartet werden",
+      "reauth_successful": "Beszel-Autorisierung aktualisiert"
+    }
+  },
+  "issues": {
+    "insecure_url": {
+      "title": "Die Verbindung zum Beszel Hub ist nicht verschlüsselt",
+      "description": "Home Assistant verbindet sich mit dem Beszel Hub unter {url} über unverschlüsseltes HTTP, und diese Adresse liegt nicht in deinem lokalen Netzwerk. Das Beszel-Sitzungstoken wird bei jeder Anfrage unverschlüsselt gesendet. Stelle den Hub hinter HTTPS, entferne dann die Integration und füge sie mit der `https://`-Adresse erneut hinzu."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "up": "Online",
+          "down": "Offline",
+          "paused": "Pausiert",
+          "pending": "Ausstehend",
+          "unknown": "Unbekannt"
+        }
+      },
+      "cpu_usage": { "name": "CPU-Auslastung" },
+      "memory_usage": { "name": "Speicherauslastung" },
+      "disk_usage": { "name": "Festplattenauslastung" },
+      "cpu_temperature": { "name": "CPU-Temperatur" },
+      "network_received_speed": { "name": "Netzwerk-Empfangsrate" },
+      "network_sent_speed": { "name": "Netzwerk-Senderate" },
+      "uptime": { "name": "Betriebszeit" },
+      "load_1m": { "name": "Last (1 Minute)" },
+      "load_5m": { "name": "Last (5 Minuten)" },
+      "load_15m": { "name": "Last (15 Minuten)" },
+      "gpu_usage": { "name": "GPU-Auslastung" },
+      "battery": { "name": "Akku" },
+      "services_total": { "name": "Dienste gesamt" },
+      "services_failed": { "name": "Fehlgeschlagene Dienste" },
+      "agent_version": { "name": "Agent-Version" }
+    },
+    "binary_sensor": {
+      "hub_connection": { "name": "Verbindung" }
+    },
+    "update": {
+      "hub_update": { "name": "Aktualisierung" }
+    }
+  }
+}

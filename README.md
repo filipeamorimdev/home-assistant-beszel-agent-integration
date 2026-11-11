@@ -2,6 +2,8 @@
 [![Release](https://img.shields.io/github/v/release/filipeamorimdev/home-assistant-beszel-agent-integration?style=for-the-badge&logo=github&logoColor=white)](https://github.com/filipeamorimdev/home-assistant-beszel-agent-integration/releases)
 [![Validate](https://img.shields.io/github/actions/workflow/status/filipeamorimdev/home-assistant-beszel-agent-integration/validate.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=validate)](https://github.com/filipeamorimdev/home-assistant-beszel-agent-integration/actions/workflows/validate.yml)
 
+**English** · [Português](README.pt.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
+
 # Beszel Agent Integration
 
 Bring the servers you monitor with [Beszel](https://github.com/henrygd/beszel) into Home Assistant as devices, sensors and ready-made dashboard cards.
@@ -11,6 +13,10 @@ Bring the servers you monitor with [Beszel](https://github.com/henrygd/beszel) i
 > Unofficial project, not affiliated with Beszel. You need a running Beszel Hub with an agent on every machine you want to see.
 
 ## Quick installation
+
+Search for **Beszel Agent Integration** in Home Assistant Marketplace/HACS.
+
+### Other options
 
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=filipeamorimdev&repository=home-assistant-beszel-agent-integration&category=integration)
 

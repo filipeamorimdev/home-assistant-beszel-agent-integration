@@ -1,0 +1,78 @@
+{
+  "title": "Beszel Agent Integration",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ligar ao Beszel",
+        "description": "Introduza o endereço do seu Beszel Hub (por exemplo `{lan_example}` ou `{https_example}`). O Home Assistant tem de conseguir aceder a este URL.",
+        "data": {
+          "url": "URL do Beszel Hub"
+        }
+      },
+      "password": {
+        "title": "Conta Beszel",
+        "description": "Inicie sessão com o mesmo email/nome de utilizador e palavra-passe que usa na interface web do Beszel. Um utilizador só de leitura é suficiente. A palavra-passe é usada apenas uma vez para criar uma sessão; o Home Assistant guarda o token de acesso resultante e renova-o automaticamente.",
+        "data": {
+          "username": "Email ou nome de utilizador",
+          "password": "Palavra-passe"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Voltar a ligar ao Beszel",
+        "description": "A sessão do Beszel não existe, expirou ou foi rejeitada. Continue para voltar a iniciar sessão com o seu nome de utilizador e palavra-passe do Beszel."
+      }
+    },
+    "error": {
+      "cannot_connect": "Não foi possível ligar ao Beszel Hub",
+      "invalid_url": "Introduza um URL HTTP ou HTTPS válido do Beszel Hub",
+      "invalid_auth": "Nome de utilizador ou palavra-passe inválidos. Use uma conta de utilizador normal do Beszel (não o administrador do PocketBase)."
+    },
+    "abort": {
+      "already_configured": "Este Beszel Hub já está configurado",
+      "cannot_connect": "Não foi possível ligar ao Beszel Hub",
+      "reauth_failed": "Não foi possível reiniciar o início de sessão no Beszel",
+      "reauth_successful": "Autorização do Beszel atualizada"
+    }
+  },
+  "issues": {
+    "insecure_url": {
+      "title": "A ligação ao Beszel Hub não está encriptada",
+      "description": "O Home Assistant liga-se ao Beszel Hub em {url} por HTTP simples, e esse endereço não está na sua rede local. O token de sessão do Beszel é enviado sem encriptação em cada pedido. Coloque o Hub atrás de HTTPS e, depois, remova e volte a adicionar a integração com o endereço `https://`."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Estado",
+        "state": {
+          "up": "Ativo",
+          "down": "Inativo",
+          "paused": "Em pausa",
+          "pending": "Pendente",
+          "unknown": "Desconhecido"
+        }
+      },
+      "cpu_usage": { "name": "Utilização da CPU" },
+      "memory_usage": { "name": "Utilização da memória" },
+      "disk_usage": { "name": "Utilização do disco" },
+      "cpu_temperature": { "name": "Temperatura da CPU" },
+      "network_received_speed": { "name": "Velocidade de receção da rede" },
+      "network_sent_speed": { "name": "Velocidade de envio da rede" },
+      "uptime": { "name": "Tempo de atividade" },
+      "load_1m": { "name": "Carga (1 minuto)" },
+      "load_5m": { "name": "Carga (5 minutos)" },
+      "load_15m": { "name": "Carga (15 minutos)" },
+      "gpu_usage": { "name": "Utilização da GPU" },
+      "battery": { "name": "Bateria" },
+      "services_total": { "name": "Total de serviços" },
+      "services_failed": { "name": "Serviços com falha" },
+      "agent_version": { "name": "Versão do agente" }
+    },
+    "binary_sensor": {
+      "hub_connection": { "name": "Ligação" }
+    },
+    "update": {
+      "hub_update": { "name": "Atualização" }
+    }
+  }
+}

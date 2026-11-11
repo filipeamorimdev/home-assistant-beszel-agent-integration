@@ -454,6 +454,47 @@ class ExpandedApiTests(unittest.IsolatedAsyncioTestCase):
         await client.async_get_extras(("smart_devices",))
         self.assertEqual(len(session.requests), before)  # not asked again
 
+    async def test_hub_info_and_update(self):
+        url = "https://github.com/henrygd/beszel/releases/tag/v0.22.0"
+        replies = {
+            "/api/beszel/info": (200, {"key": "ssh-ed25519 AAAA", "v": "v0.21.1", "cu": True}),
+            "/api/beszel/update": (200, {"v": "0.22.0", "url": url}),
+        }
+
+        class Session(FakeSession):
+            def request(self, method, url, **kwargs):
+                self.requests.append((method, url, kwargs))
+                for path, (status, payload) in replies.items():
+                    if url.endswith(path):
+                        return FakeResponse(status, payload)
+                return super().request(method, url, **kwargs)
+
+        session = Session()
+        client = API.BeszelApiClient(session, "http://beszel.test", make_token())
+        # The Hub's public key is dropped; only the version and flag are kept.
+        self.assertEqual(
+            await client.async_get_hub_info(),
+            {"version": "0.21.1", "check_updates": True},
+        )
+        self.assertEqual(
+            await client.async_get_hub_update(), {"version": "0.22.0", "url": url}
+        )
+        self.assertEqual(session.requests[0][2]["headers"]["Authorization"], make_token())
+
+        replies["/api/beszel/info"] = (200, {"v": "", "cu": "true"})
+        replies["/api/beszel/update"] = (200, {"v": "", "url": "javascript:alert(1)"})
+        self.assertEqual(
+            await client.async_get_hub_info(),
+            {"version": None, "check_updates": False},
+        )
+        self.assertEqual(
+            await client.async_get_hub_update(), {"version": None, "url": None}
+        )
+        # Without CHECK_UPDATES the route does not exist: not an auth problem.
+        replies["/api/beszel/update"] = (404, {"message": "Not Found"})
+        with self.assertRaises(API.BeszelUnavailableError):
+            await client.async_get_hub_update()
+
     async def test_core_403_still_requires_reauth(self):
         class Session(FakeSession):
             def request(self, method, url, **kwargs):

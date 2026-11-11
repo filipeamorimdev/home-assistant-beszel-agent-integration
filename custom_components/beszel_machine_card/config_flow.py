@@ -88,7 +88,7 @@ class BeszelMachineCardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_URL,
                         default=(user_input or {}).get(CONF_URL, "http://"),
-                    ): URL_SELECTOR
+                    ): URL_SELECTOR,
                 }
             ),
             errors=errors,
@@ -132,7 +132,8 @@ class BeszelMachineCardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         self._reauth_entry, data=data
                     )
                 return self.async_create_entry(
-                    title=f"Beszel ({urlsplit(self._url).netloc})", data=data
+                    title=f"Beszel ({urlsplit(self._url).netloc})",
+                    data=data,
                 )
             defaults[CONF_USERNAME] = username
 
@@ -170,3 +171,4 @@ class BeszelMachineCardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._url = self._reauth_entry.data[CONF_URL]
         self._username = self._reauth_entry.data.get(CONF_USERNAME)
         return await self.async_step_password()
+

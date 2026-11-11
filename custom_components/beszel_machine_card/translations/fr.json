@@ -1,0 +1,78 @@
+{
+  "title": "Beszel Agent Integration",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Se connecter à Beszel",
+        "description": "Saisissez l'adresse de votre Beszel Hub (par exemple `{lan_example}` ou `{https_example}`). Home Assistant doit pouvoir accéder à cette URL.",
+        "data": {
+          "url": "URL du Beszel Hub"
+        }
+      },
+      "password": {
+        "title": "Compte Beszel",
+        "description": "Connectez-vous avec la même adresse e-mail/le même nom d'utilisateur et le même mot de passe que dans l'interface web de Beszel. Un utilisateur en lecture seule suffit. Le mot de passe n'est utilisé qu'une fois pour créer une session ; Home Assistant conserve le jeton d'accès obtenu et le renouvelle automatiquement.",
+        "data": {
+          "username": "E-mail ou nom d'utilisateur",
+          "password": "Mot de passe"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Se reconnecter à Beszel",
+        "description": "La session Beszel est absente, a expiré ou a été refusée. Continuez pour vous reconnecter avec votre nom d'utilisateur et votre mot de passe Beszel."
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter au Beszel Hub",
+      "invalid_url": "Saisissez une URL HTTP ou HTTPS valide pour le Beszel Hub",
+      "invalid_auth": "Nom d'utilisateur ou mot de passe incorrect. Utilisez un compte utilisateur Beszel normal (pas l'administrateur PocketBase)."
+    },
+    "abort": {
+      "already_configured": "Ce Beszel Hub est déjà configuré",
+      "cannot_connect": "Impossible de se connecter au Beszel Hub",
+      "reauth_failed": "Impossible de relancer la connexion à Beszel",
+      "reauth_successful": "Autorisation Beszel mise à jour"
+    }
+  },
+  "issues": {
+    "insecure_url": {
+      "title": "La connexion au Beszel Hub n'est pas chiffrée",
+      "description": "Home Assistant se connecte au Beszel Hub à l'adresse {url} en HTTP non chiffré, et cette adresse ne fait pas partie de votre réseau local. Le jeton de session Beszel est envoyé en clair à chaque requête. Placez le Hub derrière HTTPS, puis supprimez et ajoutez à nouveau l'intégration avec l'adresse `https://`."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "État",
+        "state": {
+          "up": "En ligne",
+          "down": "Hors ligne",
+          "paused": "En pause",
+          "pending": "En attente",
+          "unknown": "Inconnu"
+        }
+      },
+      "cpu_usage": { "name": "Utilisation du CPU" },
+      "memory_usage": { "name": "Utilisation de la mémoire" },
+      "disk_usage": { "name": "Utilisation du disque" },
+      "cpu_temperature": { "name": "Température du CPU" },
+      "network_received_speed": { "name": "Débit réseau reçu" },
+      "network_sent_speed": { "name": "Débit réseau envoyé" },
+      "uptime": { "name": "Temps de fonctionnement" },
+      "load_1m": { "name": "Charge (1 minute)" },
+      "load_5m": { "name": "Charge (5 minutes)" },
+      "load_15m": { "name": "Charge (15 minutes)" },
+      "gpu_usage": { "name": "Utilisation du GPU" },
+      "battery": { "name": "Batterie" },
+      "services_total": { "name": "Services au total" },
+      "services_failed": { "name": "Services en échec" },
+      "agent_version": { "name": "Version de l'agent" }
+    },
+    "binary_sensor": {
+      "hub_connection": { "name": "Connexion" }
+    },
+    "update": {
+      "hub_update": { "name": "Mise à jour" }
+    }
+  }
+}

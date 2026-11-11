@@ -11,14 +11,15 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_URL, DOMAIN
+from .const import DOMAIN
 from .coordinator import BeszelDataUpdateCoordinator
-from .metrics import Metric, metrics
-from .sensor import system_device_info
+from .metrics import Metric
+from .sensor import hub_device_info, system_device_info
+from .stale import StaleEntityCleaner
 
 
 async def async_setup_entry(
@@ -31,6 +32,13 @@ async def async_setup_entry(
     async_add_entities([BeszelHubConnectionSensor(coordinator, entry)])
     known: set[tuple[str, str]] = set()
     previous_items: dict[str, Any] = {}
+    registry = er.async_get(hass)
+    cleaner = StaleEntityCleaner(
+        registry,
+        er.async_entries_for_config_entry(registry, entry.entry_id),
+        "binary_sensor",
+        er.RegistryEntryDisabler.INTEGRATION,
+    )
 
     @callback
     def _async_add_new_metrics() -> None:
@@ -39,13 +47,19 @@ async def async_setup_entry(
             if previous_items.get(system_id) is item:
                 continue
             previous_items[system_id] = item
-            for metric in metrics(item):
+            found = coordinator.metrics_for(system_id, item)
+            for key in cleaner.remove_vanished(
+                system_id, item, {metric.key for metric in found}
+            ):
+                known.discard((system_id, key))
+            for metric in found:
                 identity = (system_id, metric.key)
                 if not metric.binary or identity in known:
                     continue
                 if metric.value(item) is None:
                     continue
                 known.add(identity)
+                cleaner.track(system_id, metric.key)
                 entities.append(
                     BeszelBinaryMetricSensor(coordinator, entry, system_id, metric)
                 )
@@ -126,13 +140,7 @@ class BeszelHubConnectionSensor(
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_hub_connection"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"hub_{entry.entry_id}")},
-            name="Beszel Hub",
-            manufacturer="Beszel",
-            model="Monitoring Hub",
-            configuration_url=entry.data[CONF_URL],
-        )
+        self._attr_device_info = hub_device_info(entry)
 
     @property
     def available(self) -> bool:

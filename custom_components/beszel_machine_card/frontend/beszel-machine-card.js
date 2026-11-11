@@ -17,6 +17,7 @@
  *   device_id: <registry id>
  *   title: "NAS"                 # optional, defaults to the device name
  *   subtitle: "TrueNAS"          # optional footer label
+ *   language: pt                 # en (default), pt, es, fr or de — this card only
  *   hide_when_offline: false     # hide the whole card while the system is offline
  *   show_empty_rows: false       # detailed: keep blank GPU/Bat/Services rows
  *   split_network: false         # detailed: ↓/↑ instead of Beszel's combined total
@@ -28,15 +29,19 @@
 import {
   CORE_KEYS,
   DETAIL_CSS,
+  DETAIL_KEYS,
+  LANGUAGES,
+  LANGUAGE_NAMES,
   THEME_CSS,
   buildSystemModel,
+  cardLanguage,
   clampPercent,
   deviceName,
   entityLabel,
   escapeHtml,
-  formatNumber,
   formatPercentValue,
-  formatRate,
+  digitsFor,
+  entityReading,
   formatSize,
   formatUptimeShort,
   formatUsedTotal,
@@ -48,12 +53,16 @@ import {
   pick,
   readingNumber,
   renderDetailRows,
+  sameItems,
+  statusText,
   systemEntitiesForDevice,
   systemEntitiesFromSeeds,
   temperatureLevel,
   thresholds,
+  translate,
+  translateMetricName,
   validReading,
-} from './beszel-common.js?v=0.1.2.1';
+} from './beszel-common.js?v=0.1.3';
 
 // ─── Sensor discovery heuristics ────────────────────────────────────────────
 // For each slot, we try a list of patterns (ordered by confidence).
@@ -187,14 +196,18 @@ function advancedSensorGroup(entityId, registry) {
 function advancedSensorLabel(entityId, hass) {
   return entityLabel(hass, entityId);
 }
-function advancedSensorState(entityId, hass) {
+function advancedSensorState(entityId, hass, language) {
   const value = pick(hass, 'states', entityId, 'state');
   if (!validReading(value)) return '';
-  if (String(entityId).indexOf('binary_sensor.') === 0) return value === 'on' ? 'Yes' : value === 'off' ? 'No' : '';
-  const unit = pick(hass, 'states', entityId, 'attributes', 'unit_of_measurement') || '';
-  const n = Number(value);
-  if (!Number.isFinite(n)) return String(value);
-  return /B$/.test(unit) ? n.toFixed(1) : formatNumber(n);
+  if (String(entityId).indexOf('binary_sensor.') === 0) {
+    return value === 'on' ? translate(language, 'yes') : value === 'off' ? translate(language, 'no') : '';
+  }
+  const reading = entityReading(pick(hass, 'states', entityId), pick(hass, 'entities', entityId, 'display_precision'));
+  return reading ? reading.value : String(value);
+}
+function advancedSensorUnit(entityId, hass) {
+  const reading = entityReading(pick(hass, 'states', entityId), pick(hass, 'entities', entityId, 'display_precision'));
+  return reading ? reading.unit : (pick(hass, 'states', entityId, 'attributes', 'unit_of_measurement') || '');
 }
 
 function asciiBar(pct, width = 12) {
@@ -273,9 +286,11 @@ class BeszelMachineCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (!this._config) return;
-    const signature = JSON.stringify(this._watchedIds().map(id => pick(hass, 'states', id)));
-    if (signature === this._stateSignature) return;
-    this._stateSignature = signature;
+    const states = pick(hass, 'states') || {};
+    // The registry carries the display precision and units of these sensors.
+    const snapshot = this._watchedIds().map(id => states[id]).concat([pick(hass, 'entities')]);
+    if (sameItems(snapshot, this._stateSnapshot)) return;
+    this._stateSnapshot = snapshot;
     this._render();
   }
 
@@ -285,7 +300,7 @@ class BeszelMachineCard extends HTMLElement {
     }
     this._config = { ...config };
     this._resolved = null;
-    this._stateSignature = undefined;
+    this._stateSnapshot = undefined;
     this._render();
   }
 
@@ -401,8 +416,34 @@ class BeszelMachineCard extends HTMLElement {
       ...Object.values(entities).flat(),
       ...(this._config.extra_entities || []),
       ...(this._config.extra_pinned || []),
-      ...(this._config.show_hub_status === true ? hubEntityIds(this._hass) : []),
+      ...(this._config.show_hub_status === true ? this._hubIds() : []),
     ];
+  }
+
+  // Scanning the registry for the hub entity is only needed when it changes.
+  _hubIds() {
+    const registry = pick(this._hass, 'entities');
+    if (!registry) return hubEntityIds(this._hass);
+    if (this._hubRegistry !== registry) {
+      this._hubRegistry = registry;
+      this._hubIdList = hubEntityIds(this._hass);
+    }
+    return this._hubIdList;
+  }
+
+  _language() { return cardLanguage(this._config); }
+
+  _t(key) { return translate(this._language(), key); }
+
+  // Home Assistant's entity name on an English card. A translated card uses
+  // its own label for the metrics it knows by key and rebuilds the rest from
+  // the English name; a name the user changed is shown as it is.
+  _extraLabel(id) {
+    const language = this._language();
+    if (language === 'en') return entityLabel(this._hass, id);
+    const { entities } = this._entities();
+    const key = DETAIL_KEYS.find(item => entities[item] === id);
+    return key ? translate(language, key) : translateMetricName(language, entityLabel(this._hass, id));
   }
 
   _extras(skip = new Set()) {
@@ -410,12 +451,18 @@ class BeszelMachineCard extends HTMLElement {
       .filter(id => !skip.has(id))
       .map(id => ({
         id,
-        label: entityLabel(this._hass, id),
-        value: advancedSensorState(id, this._hass),
-        unit: pick(this._hass, 'states', id, 'attributes', 'unit_of_measurement') || '',
+        label: this._extraLabel(id),
+        value: advancedSensorState(id, this._hass, this._language()),
+        unit: advancedSensorUnit(id, this._hass),
       }))
-      .filter(extra => extra.value);
+      .filter(extra => extra.value || this._showEmpty());
   }
+
+  // `show_empty_rows`: keep selected sensors without a value (blank) in every
+  // layout instead of hiding them.
+  _showEmpty() { return pick(this._config, 'show_empty_rows') === true; }
+
+  _splitNetwork() { return pick(this._config, 'split_network') === true; }
 
   _render() {
     if (!this._hass || !this._config) return;
@@ -436,7 +483,7 @@ class BeszelMachineCard extends HTMLElement {
     const name = c.title || c.device_name || deviceName(this._hass, deviceId) || c.device || 'Beszel machine';
     const hubDown = c.show_hub_status === true && hubConnectionDown(this._hass);
     const warning = hubDown
-      ? '<div class="hub-warning">Beszel Hub is unreachable. Displayed values may be stale.</div>'
+      ? `<div class="hub-warning">${escapeHtml(this._t('hub_unreachable'))}</div>`
       : '';
     const body = layout === 'detailed'
       ? this._detailedHtml(model, limits, entities, name, warning, offline)
@@ -454,31 +501,31 @@ class BeszelMachineCard extends HTMLElement {
     }
   }
 
-  _tile(label, value, limits, sub = '') {
+  _tile(label, value, limits, sub = '', precision) {
     const has = Number.isFinite(value);
     const fill = has
       ? `<div class="bar-fill bz-${meterLevel(value, limits)}" style="width:${clampPercent(value)}%"></div>`
       : '';
     return `<div class="metric"><div class="metric-label">${escapeHtml(label)}</div>`
-      + `<span class="metric-val">${escapeHtml(formatPercentValue(value))}</span><span class="metric-unit">${has ? '%' : ''}</span>`
+      + `<span class="metric-val">${escapeHtml(formatPercentValue(value, precision))}</span><span class="metric-unit">${has ? '%' : ''}</span>`
       + `${sub ? `<div class="metric-sub">${escapeHtml(sub)}</div>` : ''}`
       + `<div class="bar-wrap">${fill}</div></div>`;
   }
 
   _compactHtml(model, limits, entities, name, warning, offline) {
     const c = this._config;
-    const statusLabel = model.status;
+    const statusLabel = statusText(this._language(), model.status);
     const uptime = formatUptimeShort(model.uptime);
     const header = `<div class="header"><div class="title">${escapeHtml(name)}</div>
       <div class="header-meta">
         ${statusLabel ? `<div class="status ${model.statusClass}"><span class="bz-dot bz-${meterLevelForStatus(model.statusClass)}"></span>${escapeHtml(statusLabel)}</div>` : ''}
         ${uptime ? `<div class="uptime">↑ ${escapeHtml(uptime)}</div>` : ''}
       </div></div>`;
-    if (offline) return `${header}${warning}<div class="offline">${OFFLINE_NOTE}</div>`;
+    if (offline) return `${header}${warning}<div class="offline">${escapeHtml(this._t('offline_note'))}</div>`;
 
     const memorySub = [
       formatUsedTotal(model.memoryUsed, model.memoryTotal),
-      model.memoryCache ? `cache ${formatSize(model.memoryCache)}` : '',
+      model.memoryCache ? `${this._t('cache')} ${formatSize(model.memoryCache)}` : '',
     ].filter(Boolean).join(' · ');
     const diskSub = formatUsedTotal(model.diskUsed, model.diskTotal);
     // Memory/disk sizes are merged into their tiles; don't repeat them.
@@ -486,26 +533,32 @@ class BeszelMachineCard extends HTMLElement {
       entities.memory_used, entities.memory_total, entities.memory_cache,
       entities.disk_used, entities.disk_total,
     ].filter(Boolean));
-    // A tile appears only when its sensor is selected and has a valid reading.
+    // A tile appears only when its sensor is selected and has a valid reading,
+    // unless empty rows are kept (then it shows blank, never a made-up zero).
+    const showEmpty = this._showEmpty();
     const tiles = [
-      ['CPU', model.cpu, ''],
-      ['RAM', model.memory, memorySub],
-      ['Disk', model.disk, diskSub],
-      ['GPU', model.gpu, ''],
-    ].filter(([, value]) => Number.isFinite(value))
-      .map(([label, value, sub]) => this._tile(label, value, limits, sub));
+      [this._t('cpu'), model.cpu, '', model.digits.cpu],
+      [this._t('ram'), model.memory, memorySub, model.digits.memory],
+      [this._t('disk'), model.disk, diskSub, model.digits.disk],
+      [this._t('gpu'), model.gpu, '', model.digits.gpu],
+    ].filter(([, value]) => showEmpty || Number.isFinite(value))
+      .map(([label, value, sub, precision]) => this._tile(label, value, limits, sub, precision));
     for (const extra of this._extras(merged)) {
       tiles.push(`<div class="metric extra-row"><div class="metric-label">${escapeHtml(extra.label)}</div>`
-        + `<span class="metric-val">${escapeHtml(extra.value)}</span><span class="metric-unit">${escapeHtml(extra.unit)}</span></div>`);
+        + `<span class="metric-val">${escapeHtml(extra.value)}</span><span class="metric-unit">${extra.value ? escapeHtml(extra.unit) : ''}</span></div>`);
     }
 
-    const rx = formatRate(model.rx);
-    const tx = formatRate(model.tx);
+    const rx = model.rxText;
+    const tx = model.txText;
     const temp = model.temperature
       ? `<span class="temp"><span class="bz-dot bz-${temperatureLevel(model.temperature.celsius)}"></span>${escapeHtml(model.temperature.text)}</span>`
       : '';
-    const net = [rx && `<span>↓ ${escapeHtml(rx)}</span>`, tx && `<span>↑ ${escapeHtml(tx)}</span>`, temp]
-      .filter(Boolean).join('');
+    // Beszel's combined total by default; ↓ / ↑ when split network is on.
+    const split = [rx && `↓ ${rx}`, tx && `↑ ${tx}`].filter(Boolean);
+    const network = this._splitNetwork()
+      ? split.map(part => `<span>${escapeHtml(part)}</span>`)
+      : (split.length ? [`<span title="${escapeHtml(split.join('  '))}">⇅ ${escapeHtml(model.netText)}</span>`] : []);
+    const net = [...network, temp].filter(Boolean).join('');
     const footer = net || c.subtitle
       ? `<div class="footer"><div class="net">${net}</div>${c.subtitle ? `<div class="subtitle">${escapeHtml(c.subtitle)}</div>` : ''}</div>`
       : '';
@@ -516,15 +569,16 @@ class BeszelMachineCard extends HTMLElement {
   _detailedHtml(model, limits, entities, name, warning, offline) {
     const c = this._config;
     const menu = entities.status || this._entities().deviceId
-      ? '<button class="bz-menu" type="button" title="Open device" aria-label="Open device"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button>'
+      ? `<button class="bz-menu" type="button" title="${escapeHtml(this._t('open_device'))}" aria-label="${escapeHtml(this._t('open_device'))}"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button>`
       : '';
     const head = `<div class="bz-head"><span class="bz-dot bz-${meterLevelForStatus(model.statusClass)}"></span><span class="bz-name">${escapeHtml(name)}</span>${menu}</div>`;
     const rows = offline
-      ? `<div class="offline">${OFFLINE_NOTE}</div>`
+      ? `<div class="offline">${escapeHtml(this._t('offline_note'))}</div>`
       : renderDetailRows(model, {
         limits,
-        showEmpty: c.show_empty_rows === true,
-        splitNetwork: c.split_network === true,
+        language: this._language(),
+        showEmpty: this._showEmpty(),
+        splitNetwork: this._splitNetwork(),
         extras: this._extras(),
       });
     const footer = c.subtitle ? `<div class="footer"><div class="subtitle">${escapeHtml(c.subtitle)}</div></div>` : '';
@@ -535,9 +589,10 @@ class BeszelMachineCard extends HTMLElement {
     const c = this._config;
     const title = c.title || c.device_name || deviceName(this._hass, this._entities().deviceId) || c.device || 'machine';
     const statusMark = model.statusClass === 'up' ? 'OK' : model.statusClass === 'pending' ? '..' : '!!';
-    const pct = value => (Number.isFinite(value) ? `${value.toFixed(1)}%` : '');
-    // Rows without a selected, valid reading are skipped entirely.
-    const line = (label, bar, value) => !value ? '' :
+    const pct = (value, precision) => (Number.isFinite(value) ? `${value.toFixed(digitsFor(precision, 1))}%` : '');
+    // Rows without a valid reading are skipped unless empty rows are kept.
+    const showEmpty = this._showEmpty();
+    const line = (label, bar, value) => !value && !showEmpty ? '' :
       `<tr><td class="k">${escapeHtml((label + '     ').slice(0, 5))}</td>`
       + `<td class="b">${escapeHtml(bar)}</td>`
       + `<td class="v">${escapeHtml(value)}</td></tr>`;
@@ -547,19 +602,24 @@ class BeszelMachineCard extends HTMLElement {
     if (offline) {
       rows = '<tr><td colspan="3" class="off">system offline (hidden outside edit mode)</td></tr>';
     } else {
-      rows += line('cpu', asciiBar(model.cpu), pct(model.cpu));
-      rows += line('mem', asciiBar(model.memory), pct(model.memory));
-      rows += line('disk', asciiBar(model.disk), pct(model.disk));
-      const rx = formatRate(model.rx);
-      const tx = formatRate(model.tx);
-      rows += line('net', blank, [rx && `rx ${rx}`, tx && `tx ${tx}`].filter(Boolean).join('  '));
+      rows += line('cpu', asciiBar(model.cpu), pct(model.cpu, model.digits.cpu));
+      rows += line('mem', asciiBar(model.memory), pct(model.memory, model.digits.memory));
+      rows += line('disk', asciiBar(model.disk), pct(model.disk, model.digits.disk));
+      const rx = model.rxText;
+      const tx = model.txText;
+      if (this._splitNetwork()) {
+        rows += line('rx', blank, rx);
+        rows += line('tx', blank, tx);
+      } else {
+        rows += line('net', blank, rx || tx ? model.netText : '');
+      }
       rows += line('up', blank, formatUptimeShort(model.uptime));
       for (const extra of this._extras()) {
         const label = String(extra.id).replace(/^.*_/, '').slice(0, 5);
-        rows += line(label, blank, `${extra.value}${extra.unit ? ` ${extra.unit}` : ''}`);
+        rows += line(label, blank, extra.value ? `${extra.value}${extra.unit ? ` ${extra.unit}` : ''}` : '');
       }
       const temp = model.temperature;
-      rows += line('temp', blank, temp ? `${temp.value.toFixed(1)}${temp.unit.replace('°', '')}` : '');
+      rows += line('temp', blank, temp ? `${temp.number}${temp.unit.replace('°', '')}` : '');
     }
 
     this.shadowRoot.innerHTML = `
@@ -608,14 +668,13 @@ class BeszelMachineCard extends HTMLElement {
   }
 }
 
-// Only ever drawn in edit mode; on the dashboard an offline card is hidden.
-const OFFLINE_NOTE = 'System offline — hidden outside edit mode';
-
 function meterLevelForStatus(statusClassName) {
   return { up: 'ok', pending: 'warn', down: 'crit', unknown: 'none' }[statusClassName] || 'none';
 }
 
+// The editor's Layout dropdown also offers the terminal style (`style: terminal`).
 function editorLayout(config) {
+  if (pick(config, 'style') === 'terminal') return 'terminal';
   if (pick(config, 'layout') === 'compact' || pick(config, 'layout') === 'detailed') return config.layout;
   return pick(config, 'view') === 'compact' ? 'detailed' : 'compact';
 }
@@ -689,12 +748,12 @@ class BeszelMachineCardEditor extends HTMLElement {
     if (hideWhenOffline) hideWhenOffline.checked = c.hide_when_offline === true;
     const layout = root.getElementById('layout');
     if (layout && layout.value !== editorLayout(c)) layout.value = editorLayout(c);
+    const language = root.getElementById('language');
+    if (language && language.value !== cardLanguage(c)) language.value = cardLanguage(c);
     const showEmpty = root.getElementById('show-empty-rows');
     if (showEmpty) showEmpty.checked = c.show_empty_rows === true;
     const splitNetwork = root.getElementById('split-network');
     if (splitNetwork) splitNetwork.checked = c.split_network === true;
-    const terminalStyle = root.getElementById('terminal-style');
-    if (terminalStyle) terminalStyle.checked = c.style === 'terminal';
 
     const select = root.getElementById('device');
     if (select && select.value !== (c.device_id || '')) {
@@ -897,8 +956,12 @@ class BeszelMachineCardEditor extends HTMLElement {
       language: this._hass.language || 'en',
       locale: this._hass.locale || { language: this._hass.language || 'en' },
       translationMetadata: this._hass.translationMetadata || {},
-      localize: (key, ...args) => (this._hass.localize ? this._hass.localize(key, ...args) : '') || key,
-      loadBackendTranslation: () => Promise.resolve(),
+      // HA's pickers expect '' for a missing key so their own fallbacks run
+      // (e.g. domain name instead of "component.sensor.title"); never echo the key.
+      localize: (key, ...args) => (this._hass && this._hass.localize ? this._hass.localize(key, ...args) : '') || '',
+      loadBackendTranslation: (...args) => (this._hass && this._hass.loadBackendTranslation
+        ? Promise.resolve(this._hass.loadBackendTranslation(...args)).catch(() => undefined)
+        : Promise.resolve()),
       loadFragmentTranslation: () => Promise.resolve(),
     };
     for (const picker of this.shadowRoot.querySelectorAll('ha-entity-picker') || []) {
@@ -1084,7 +1147,7 @@ class BeszelMachineCardEditor extends HTMLElement {
           margin-top: 8px;
         }
         .section-title:first-child { margin-top: 0; }
-        #device, #layout, #advanced-preset { display: block; width: 100%; }
+        #device, #layout, #language, #advanced-preset { display: block; width: 100%; }
         .text-field { display: flex; flex-direction: column; gap: 4px; }
         .text-field input {
           box-sizing: border-box; width: 100%; min-height: 40px; padding: 0 10px;
@@ -1104,7 +1167,7 @@ class BeszelMachineCardEditor extends HTMLElement {
         .select-shell:focus-within { border-color:var(--primary-color); box-shadow:inset 0 0 0 1px var(--primary-color); }
         .select-leading, .select-chevron { position:absolute; pointer-events:none; color:var(--secondary-text-color); --mdc-icon-size:22px; }
         .select-leading { left:13px; } .select-chevron { right:11px; }
-        #device, #layout, #advanced-preset {
+        #device, #layout, #language, #advanced-preset {
           box-sizing:border-box; min-height:46px; padding:0 42px 0 44px; border:0; outline:0;
           appearance:none; -webkit-appearance:none; background:transparent; color:var(--primary-text-color);
           font:inherit; cursor:pointer;
@@ -1151,13 +1214,23 @@ class BeszelMachineCardEditor extends HTMLElement {
             <select id="layout" aria-label="Layout">
               <option value="compact">Compact tiles</option>
               <option value="detailed">Detailed list (Beszel style)</option>
+              <option value="terminal">Terminal (plain monospace, older devices)</option>
             </select>
             <ha-icon class="select-chevron" icon="mdi:menu-down"></ha-icon>
           </span>
         </label>
-        <label class="check"><input type="checkbox" id="show-empty-rows"><span>Detailed list: keep empty rows (GPU, battery…)</span></label>
-        <label class="check"><input type="checkbox" id="split-network"><span>Detailed list: split network into ↓ / ↑</span></label>
-        <label class="check"><input type="checkbox" id="terminal-style"><span>Terminal style (plain monospace layout)</span></label>
+        <label class="entity-field">
+          <span class="field-label">Language of this card</span>
+          <span class="select-shell">
+            <ha-icon class="select-leading" icon="mdi:translate"></ha-icon>
+            <select id="language" aria-label="Language of this card">
+              ${LANGUAGES.map(code => `<option value="${code}">${escapeHtml(LANGUAGE_NAMES[code])}</option>`).join('')}
+            </select>
+            <ha-icon class="select-chevron" icon="mdi:menu-down"></ha-icon>
+          </span>
+        </label>
+        <label class="check"><input type="checkbox" id="show-empty-rows"><span>Show sensors without a value (blank) instead of hiding them</span></label>
+        <label class="check"><input type="checkbox" id="split-network"><span>Split network into ↓ / ↑</span></label>
 
         <div class="section-title">Device</div>
 
@@ -1208,11 +1281,18 @@ class BeszelMachineCardEditor extends HTMLElement {
     const layout = this.shadowRoot.getElementById('layout');
     layout.value = editorLayout(c);
     layout.addEventListener('change', () => {
-      // Replace the legacy `view` key with `layout`.
-      const { view, ...rest } = this._config;
+      if (layout.value === 'terminal') {
+        this._emit({ style: 'terminal' });
+        return;
+      }
+      // Replace the legacy `view` key with `layout` and leave terminal style.
+      const { view, style, ...rest } = this._config;
       this._config = rest;
       this._emit({ layout: layout.value });
     });
+    const language = this.shadowRoot.getElementById('language');
+    language.value = cardLanguage(c);
+    language.addEventListener('change', () => this._emit({ language: language.value }));
     const showEmpty = this.shadowRoot.getElementById('show-empty-rows');
     showEmpty.checked = c.show_empty_rows === true;
     showEmpty.addEventListener('change', () => this._emit({ show_empty_rows: showEmpty.checked }));
@@ -1220,11 +1300,6 @@ class BeszelMachineCardEditor extends HTMLElement {
     splitNetwork.checked = c.split_network === true;
     splitNetwork.addEventListener('change', () => {
       this._emit({ split_network: splitNetwork.checked });
-    });
-    const terminalStyle = this.shadowRoot.getElementById('terminal-style');
-    terminalStyle.checked = c.style === 'terminal';
-    terminalStyle.addEventListener('change', () => {
-      this._emit({ style: terminalStyle.checked ? 'terminal' : 'default' });
     });
 
     const select = this.shadowRoot.getElementById('device');

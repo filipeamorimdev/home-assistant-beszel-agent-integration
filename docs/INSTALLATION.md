@@ -15,6 +15,8 @@ Once a machine shows as **Up** in the Beszel web UI, it appears in Home Assistan
 
 ## Install
 
+Search for **Beszel Agent Integration** in Home Assistant Marketplace/HACS.
+
 ### HACS (custom repository)
 
 1. In HACS, open the **⋮** menu → **Custom repositories**.
@@ -40,5 +42,6 @@ Go to **Settings → Devices & services → Add integration** and search for **B
 - Use a normal Beszel user, not a PocketBase `_superusers` account. Your password is used once to get a session and is never stored.
 - Use HTTPS if the Hub is reachable beyond your LAN. Home Assistant shows a repair warning for a plain `http://` address outside your local network.
 - If the session can't be refreshed, Home Assistant asks you to sign in again.
+- **Language:** each dashboard card has its own language setting (English, Portuguese, Spanish, French or German), so there is nothing to choose here. The setup dialogs follow your Home Assistant profile language, and Home Assistant names the main sensors in its own language. Detailed sensors (per core, per disk, per container…) keep English names.
 
 Next: [add the dashboard cards](CARDS.md).

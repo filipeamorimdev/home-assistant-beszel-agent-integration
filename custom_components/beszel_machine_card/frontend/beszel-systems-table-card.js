@@ -10,16 +10,21 @@
 
 import {
   DETAIL_CSS,
+  LANGUAGES,
+  LANGUAGE_NAMES,
   THEME_CSS,
   batteryLevel,
   buildSystemModel,
+  cardLanguage,
   clampPercent,
   discoverSystems,
   escapeHtml,
   formatLoads,
   formatNumber,
   formatPercent,
-  formatRate,
+  digitsFor,
+  entityReading,
+  formatRateState,
   formatUptimeLong,
   formatUptimeShort,
   hubConnectionDown,
@@ -29,40 +34,33 @@ import {
   networkTotal,
   openSystem,
   pick,
-  rateBytes,
   readingNumber,
   renderDetailRows,
+  sameItems,
+  statusText,
   temperatureLevel,
   thresholds,
-} from './beszel-common.js?v=0.1.2.1';
+  translate,
+} from './beszel-common.js?v=0.1.3';
 
-// Beszel's column order.
+// Beszel's column order. Headers come from translate(language, key).
 const TABLE_COLUMNS = [
-  { key: 'cpu', label: 'CPU', icon: 'mdi:cpu-64-bit' },
-  { key: 'memory', label: 'Memory', icon: 'mdi:memory' },
-  { key: 'disk', label: 'Disk', icon: 'mdi:harddisk' },
-  { key: 'gpu', label: 'GPU', icon: 'mdi:expansion-card-variant' },
-  { key: 'load', label: 'Load Avg', icon: 'mdi:timer-sand' },
-  { key: 'network', label: 'Net', icon: 'mdi:ethernet' },
-  { key: 'temperature', label: 'Temp', icon: 'mdi:thermometer' },
-  { key: 'battery', label: 'Bat', icon: 'mdi:battery' },
-  { key: 'services', label: 'Services', icon: 'mdi:console-line' },
-  { key: 'uptime', label: 'Uptime', icon: 'mdi:clock-outline' },
-  { key: 'agent', label: 'Agent', icon: 'mdi:wifi' },
+  { key: 'cpu', icon: 'mdi:cpu-64-bit' },
+  { key: 'memory', icon: 'mdi:memory' },
+  { key: 'disk', icon: 'mdi:harddisk' },
+  { key: 'gpu', icon: 'mdi:expansion-card-variant' },
+  { key: 'load', icon: 'mdi:timer-sand' },
+  { key: 'network', icon: 'mdi:ethernet' },
+  { key: 'temperature', icon: 'mdi:thermometer' },
+  { key: 'battery', icon: 'mdi:battery' },
+  { key: 'services', icon: 'mdi:console-line' },
+  { key: 'uptime', icon: 'mdi:clock-outline' },
+  { key: 'agent', icon: 'mdi:wifi' },
 ];
 const ADVANCED_TABLE_COLUMNS = [
-  { key: 'memory_total', label: 'RAM total' },
-  { key: 'memory_used', label: 'RAM used' },
-  { key: 'memory_cache', label: 'RAM cache' },
-  { key: 'swap_usage', label: 'Swap' },
-  { key: 'disk_free', label: 'Disk free' },
-  { key: 'disk_read_speed', label: 'Disk read' },
-  { key: 'disk_write_speed', label: 'Disk write' },
-  { key: 'cpu_user', label: 'CPU user' },
-  { key: 'cpu_system', label: 'CPU system' },
-  { key: 'cpu_iowait', label: 'CPU I/O wait' },
-  { key: 'fan', label: 'Fan RPM' },
-];
+  'memory_total', 'memory_used', 'memory_cache', 'swap_usage', 'disk_free',
+  'disk_read_speed', 'disk_write_speed', 'cpu_user', 'cpu_system', 'cpu_iowait', 'fan',
+].map(key => ({ key }));
 const ALL_COLUMNS = [...TABLE_COLUMNS, ...ADVANCED_TABLE_COLUMNS];
 const DEFAULT_TABLE_COLUMNS = TABLE_COLUMNS.map(column => column.key);
 const PERCENT_EXTRAS = new Set(['swap_usage', 'cpu_user', 'cpu_system', 'cpu_iowait']);
@@ -89,8 +87,8 @@ const DEFAULT_CONFIG = {
   style: 'default',
 };
 
-function percentCell(value, level) {
-  const text = formatPercent(value);
+function percentCell(value, level, precision) {
+  const text = formatPercent(value, precision);
   if (!text) return '';
   return `<span class="pct"><span class="pct-val">${escapeHtml(text)}</span><span class="bz-meter"><span class="bz-fill bz-${level}" style="width:${clampPercent(value)}%"></span></span></span>`;
 }
@@ -174,17 +172,22 @@ class BeszelSystemsTableCard extends HTMLElement {
   setConfig(config) {
     this._config = { ...DEFAULT_CONFIG, ...(config || {}) };
     this._sort = readStorage(this._sortStorageKey()) || null;
-    this._stateSignature = undefined;
+    this._stateSnapshot = undefined;
     this._render();
   }
 
   set hass(value) {
     this._hass = value;
     const registryChanged = this._refreshSystems();
-    const ids = [...hubEntityIds(value), ...this._systems.flatMap(system => Object.values(system.entities).flat())];
-    const signature = JSON.stringify(ids.map(id => pick(value, 'states', id)));
-    if (!registryChanged && signature === this._stateSignature) return;
-    this._stateSignature = signature;
+    // The watched IDs only change with the registry; without one (old
+    // frontends) they are looked up again each time.
+    if (registryChanged || !this._watchedIds || !pick(value, 'entities')) {
+      this._watchedIds = [...hubEntityIds(value), ...this._systems.flatMap(system => Object.values(system.entities).flat())];
+    }
+    const states = pick(value, 'states') || {};
+    const snapshot = this._watchedIds.map(id => states[id]);
+    if (!registryChanged && sameItems(snapshot, this._stateSnapshot)) return;
+    this._stateSnapshot = snapshot;
     this._render();
   }
 
@@ -308,6 +311,8 @@ class BeszelSystemsTableCard extends HTMLElement {
     return buildSystemModel(this._hass, system.entities);
   }
 
+  _t(key) { return translate(cardLanguage(this._config), key); }
+
   _entity(system, key) {
     const id = system.entities[key];
     return id ? pick(this._hass, 'states', id) : null;
@@ -318,38 +323,39 @@ class BeszelSystemsTableCard extends HTMLElement {
     const state = this._entity(system, key);
     const n = readingNumber(pick(state, 'state'));
     if (!Number.isFinite(n) || n < 0) return '';
-    if (PERCENT_EXTRAS.has(key)) return n <= 100 ? percentCell(n, meterLevel(n, limits)) : '';
-    if (RATE_EXTRAS.has(key)) return escapeHtml(formatRate(rateBytes(state)));
-    const unit = pick(state.attributes, 'unit_of_measurement') || '';
-    return escapeHtml(`${/B$/.test(unit) ? n.toFixed(1) : formatNumber(n)}${unit ? ` ${unit}` : ''}`);
+    const precision = pick(this._hass, 'entities', system.entities[key], 'display_precision');
+    if (PERCENT_EXTRAS.has(key)) return n <= 100 ? percentCell(n, meterLevel(n, limits), precision) : '';
+    if (RATE_EXTRAS.has(key)) return escapeHtml(formatRateState(state, precision));
+    const reading = entityReading(state, precision);
+    return reading ? escapeHtml(`${reading.value}${reading.unit ? ` ${reading.unit}` : ''}`) : '';
   }
 
   _cell(system, model, column, limits) {
     switch (column) {
-      case 'cpu': return percentCell(model.cpu, meterLevel(model.cpu, limits));
-      case 'memory': return percentCell(model.memory, meterLevel(model.memory, limits));
-      case 'disk': return percentCell(model.disk, meterLevel(model.disk, limits));
-      case 'gpu': return percentCell(model.gpu, meterLevel(model.gpu, limits));
-      case 'battery': return percentCell(model.battery, batteryLevel(model.battery));
+      case 'cpu': return percentCell(model.cpu, meterLevel(model.cpu, limits), model.digits.cpu);
+      case 'memory': return percentCell(model.memory, meterLevel(model.memory, limits), model.digits.memory);
+      case 'disk': return percentCell(model.disk, meterLevel(model.disk, limits), model.digits.disk);
+      case 'gpu': return percentCell(model.gpu, meterLevel(model.gpu, limits), model.digits.gpu);
+      case 'battery': return percentCell(model.battery, batteryLevel(model.battery), model.digits.battery);
       case 'load': {
-        const loads = formatLoads(model.loads);
+        const loads = formatLoads(model.loads, model.digits.loads);
         return loads ? `<span class="bz-dot bz-${loadLevel(model.loads, model.threads, limits)}"></span>${escapeHtml(loads)}` : '';
       }
       case 'network': {
-        const rx = formatRate(model.rx);
-        const tx = formatRate(model.tx);
+        const rx = model.rxText;
+        const tx = model.txText;
         if (!rx && !tx) return '';
         const split = [rx && `↓ ${rx}`, tx && `↑ ${tx}`].filter(Boolean).join('  ');
         return this._config.split_network === true
           ? escapeHtml(split)
-          : `<span title="${escapeHtml(split)}">${escapeHtml(formatRate(networkTotal(model)))}</span>`;
+          : `<span title="${escapeHtml(split)}">${escapeHtml(model.netText)}</span>`;
       }
       case 'temperature': return model.temperature ? `<span class="bz-dot bz-${temperatureLevel(model.temperature.celsius)}"></span>${escapeHtml(model.temperature.text)}` : '';
       case 'services':
         if (!Number.isFinite(model.servicesTotal)) return '';
         return `<span class="bz-dot bz-${model.servicesFailed > 0 ? 'crit' : 'ok'}"></span>${escapeHtml(formatNumber(model.servicesTotal))}`
-          + (Number.isFinite(model.servicesFailed) ? ` <span class="bz-muted">(failed: ${escapeHtml(formatNumber(model.servicesFailed))})</span>` : '');
-      case 'uptime': return escapeHtml(formatUptimeLong(model.uptime));
+          + (Number.isFinite(model.servicesFailed) ? ` <span class="bz-muted">(${escapeHtml(this._t('failed'))}: ${escapeHtml(formatNumber(model.servicesFailed))})</span>` : '');
+      case 'uptime': return escapeHtml(formatUptimeLong(model.uptime, cardLanguage(this._config)));
       case 'agent': return model.agent ? `<ha-icon class="agent-icon" icon="mdi:tag-outline"></ha-icon>${escapeHtml(model.agent)}` : '';
       default: return this._extraCell(system, model, column, limits);
     }
@@ -413,6 +419,8 @@ class BeszelSystemsTableCard extends HTMLElement {
       return;
     }
     const c = this._config;
+    const language = cardLanguage(c);
+    const t = key => escapeHtml(translate(language, key));
     const limits = thresholds(c);
     const systems = this._visibleSystems();
     const hubDown = c.show_hub_status !== false && hubConnectionDown(this._hass);
@@ -427,17 +435,17 @@ class BeszelSystemsTableCard extends HTMLElement {
     let body;
     if (!rows.length) {
       body = !this._registryLoaded
-        ? '<div class="empty">Discovering Beszel systems…</div>'
+        ? `<div class="empty">${t('discovering')}</div>`
         : !(this._systems || []).length
-          ? '<div class="empty">No Beszel system devices were found.</div>'
+          ? `<div class="empty">${t('no_systems')}</div>`
           : noAlerts
-            ? '<div class="empty">No systems with alerts (card hidden outside edit mode).</div>'
-            : '<div class="empty">All matched systems are offline.</div>';
+            ? `<div class="empty">${t('no_alerts')}</div>`
+            : `<div class="empty">${t('all_offline')}</div>`;
     } else if (this._layout() === 'grid') {
       body = `<div class="grid">${rows.map(({ system, model }) => `
         <div class="grid-card">
-          <div class="bz-head"><span class="bz-dot bz-${statusLevelOf(model)}"></span><span class="bz-name">${escapeHtml(system.name)}</span><button class="bz-menu" type="button" data-device="${escapeHtml(system.id)}" title="Open device" aria-label="Open ${escapeHtml(system.name)}"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button></div>
-          <div class="bz-body">${renderDetailRows(model, { limits, showEmpty: c.show_empty_rows === true, splitNetwork: c.split_network === true })}</div>
+          <div class="bz-head"><span class="bz-dot bz-${statusLevelOf(model)}"></span><span class="bz-name">${escapeHtml(system.name)}</span><button class="bz-menu" type="button" data-device="${escapeHtml(system.id)}" title="${t('open_device')}" aria-label="${t('open_device')}: ${escapeHtml(system.name)}"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button></div>
+          <div class="bz-body">${renderDetailRows(model, { limits, language, showEmpty: c.show_empty_rows === true, splitNetwork: c.split_network === true })}</div>
         </div>`).join('')}</div>`;
     } else {
       let columns = this._columns();
@@ -452,11 +460,11 @@ class BeszelSystemsTableCard extends HTMLElement {
         return `<th class="sortable${sorted ? ' sorted' : ''}" data-sort="${key}">${icon ? `<ha-icon icon="${icon}"></ha-icon>` : ''}${escapeHtml(label)}${arrow ? `<span class="arrow">${arrow}</span>` : ''}</th>`;
       };
       const tableRows = rows.map(({ system, model }, index) => {
-        const statusLabel = hideOffline || !model.status ? '' : `<span class="status-label">${escapeHtml(model.status)}</span>`;
+        const statusLabel = hideOffline || !model.status ? '' : `<span class="status-label">${escapeHtml(statusText(language, model.status))}</span>`;
         const tds = columns.map(column => `<td>${cells[index][column.key]}</td>`).join('');
         return `<tr class="system-row" data-device="${escapeHtml(system.id)}"><td class="system"><span class="bz-dot bz-${statusLevelOf(model)}"></span>${escapeHtml(system.name)}${statusLabel}</td>${tds}</tr>`;
       }).join('');
-      body = `<div class="scroll"><table><thead><tr>${header('name', 'System', 'mdi:server')}${columns.map(column => header(column.key, column.label, column.icon)).join('')}</tr></thead><tbody>${tableRows}</tbody></table></div>`;
+      body = `<div class="scroll"><table><thead><tr>${header('name', translate(language, 'system'), 'mdi:server')}${columns.map(column => header(column.key, translate(language, column.key), column.icon)).join('')}</tr></thead><tbody>${tableRows}</tbody></table></div>`;
     }
 
     this.shadowRoot.innerHTML = `
@@ -464,7 +472,7 @@ class BeszelSystemsTableCard extends HTMLElement {
       <ha-card>
         <div class="content">
           ${c.title ? `<div class="title">${escapeHtml(c.title)}</div>` : ''}
-          ${hubDown ? '<div class="warning">Beszel Hub is unreachable. Displayed values may be stale.</div>' : ''}
+          ${hubDown ? `<div class="warning">${t('hub_unreachable')}</div>` : ''}
           ${body}
         </div>
       </ha-card>`;
@@ -484,23 +492,23 @@ class BeszelSystemsTableCard extends HTMLElement {
 
   _terminalValue(system, model, column) {
     // Plain text only — no HTML tags, spans, or breaks (old WebViews).
-    const pct = value => (Number.isFinite(value) ? `${value.toFixed(1)}%` : '-');
+    const pct = (value, precision) => (Number.isFinite(value) ? `${value.toFixed(digitsFor(precision, 1))}%` : '-');
     switch (column) {
-      case 'cpu': return pct(model.cpu);
-      case 'memory': return pct(model.memory);
-      case 'disk': return pct(model.disk);
-      case 'gpu': return pct(model.gpu);
-      case 'battery': return pct(model.battery);
+      case 'cpu': return pct(model.cpu, model.digits.cpu);
+      case 'memory': return pct(model.memory, model.digits.memory);
+      case 'disk': return pct(model.disk, model.digits.disk);
+      case 'gpu': return pct(model.gpu, model.digits.gpu);
+      case 'battery': return pct(model.battery, model.digits.battery);
       case 'temperature': {
         const temp = model.temperature;
-        return temp ? `${temp.value.toFixed(1)}${temp.unit.replace('°', '')}` : '-';
+        return temp ? `${temp.number}${temp.unit.replace('°', '')}` : '-';
       }
       case 'uptime': return formatUptimeShort(model.uptime) || '-';
       case 'agent': return model.agent || '-';
-      case 'load': return model.loads.map(value => (Number.isFinite(value) ? value.toFixed(2) : '-')).join('/');
+      case 'load': return model.loads.map((value, index) => (Number.isFinite(value) ? value.toFixed(digitsFor(model.digits.loads[index], 2)) : '-')).join('/');
       case 'network': {
-        const rx = formatRate(model.rx);
-        const tx = formatRate(model.tx);
+        const rx = model.rxText;
+        const tx = model.txText;
         if (!rx && !tx) return '-';
         return `${rx ? `v${rx}` : ''}${rx && tx ? ' ' : ''}${tx ? `^${tx}` : ''}`;
       }
@@ -658,7 +666,7 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
         : this._systems.map(system => system.id),
     );
     const selectedColumns = new Set(this._config.columns || DEFAULT_TABLE_COLUMNS);
-    const checks = columns => columns.map(column => `<label class="check"><input type="checkbox" data-column="${column.key}"><span>${escapeHtml(column.label)}</span></label>`).join('');
+    const checks = columns => columns.map(column => `<label class="check"><input type="checkbox" data-column="${column.key}"><span>${escapeHtml(translate('en', column.key))}</span></label>`).join('');
     this.shadowRoot.innerHTML = `
       <style>
         .editor { display:flex; flex-direction:column; gap:8px; padding:8px 4px; }
@@ -684,6 +692,12 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
             <option value="auto">Automatic (table; grid on narrow cards)</option>
             <option value="table">Table</option>
             <option value="grid">Grid (Beszel cards)</option>
+            <option value="terminal">Terminal (plain monospace, older devices)</option>
+          </select>
+        </label>
+        <label class="field">Language of this card
+          <select id="language">
+            ${LANGUAGES.map(code => `<option value="${code}">${escapeHtml(LANGUAGE_NAMES[code])}</option>`).join('')}
           </select>
         </label>
         <label class="check"><input type="checkbox" id="hub-status"><span>Show Hub connection warning</span></label>
@@ -691,7 +705,6 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
         <label class="check"><input type="checkbox" id="only-alerts"><span>Show only systems with alerts (hide the card when none)</span></label>
         <label class="check"><input type="checkbox" id="hide-empty-columns"><span>Hide columns no system reports</span></label>
         <label class="check"><input type="checkbox" id="split-network"><span>Split network into ↓ / ↑</span></label>
-        <label class="check"><input type="checkbox" id="terminal-style"><span>Terminal style (plain monospace layout)</span></label>
         <div class="section">Systems</div>
         <div class="checks" id="systems">${this._systems.length ? this._systems.map(system => `<label class="check"><input type="checkbox" data-system-id="${escapeHtml(system.id)}"><span>${escapeHtml(system.name)}</span></label>`).join('') : '<span class="empty">No Beszel systems found</span>'}</div>
         <div class="section">Columns</div>
@@ -708,8 +721,22 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
       try { title.setSelectionRange(focusState.start, focusState.end); } catch (_) { /* ignore */ }
     }
     const layout = this.shadowRoot.getElementById('layout');
-    layout.value = ['table', 'grid'].includes(this._config.layout) ? this._config.layout : 'auto';
-    layout.addEventListener('change', () => this._emit({ layout: layout.value }));
+    // Terminal style (`style: terminal`) is offered as a Layout choice.
+    layout.value = this._config.style === 'terminal'
+      ? 'terminal'
+      : (['table', 'grid'].includes(this._config.layout) ? this._config.layout : 'auto');
+    layout.addEventListener('change', () => {
+      if (layout.value === 'terminal') {
+        this._emit({ style: 'terminal' });
+        return;
+      }
+      const { style, ...rest } = this._config;
+      this._config = rest;
+      this._emit({ layout: layout.value });
+    });
+    const language = this.shadowRoot.getElementById('language');
+    language.value = cardLanguage(this._config);
+    language.addEventListener('change', () => this._emit({ language: language.value }));
     // Options that default to on are stored as explicit false when unchecked.
     const bind = (id, key, defaultOn) => {
       const box = this.shadowRoot.getElementById(id);
@@ -726,11 +753,6 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
     onlyAlertsBox.addEventListener('change', syncHideOffline);
     bind('hide-empty-columns', 'hide_empty_columns', true);
     bind('split-network', 'split_network', false);
-    const terminalStyle = this.shadowRoot.getElementById('terminal-style');
-    terminalStyle.checked = this._config.style === 'terminal';
-    terminalStyle.addEventListener('change', () => {
-      this._emit({ style: terminalStyle.checked ? 'terminal' : 'default' });
-    });
     const advanced = this.shadowRoot.querySelector('details.advanced-columns');
     if (advanced) {
       advanced.addEventListener('toggle', () => { this._advancedColumnsOpen = advanced.open; });

@@ -21,16 +21,17 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_URL, DOMAIN
 from .coordinator import BeszelDataUpdateCoordinator
-from .metrics import metrics
 from .metrics import network as _network
 from .metrics import number as _number
 from .metrics import temperature as _temperature
+from .stale import StaleEntityCleaner
 
 
 def _info(item: Mapping[str, Any], key: str) -> Any:
@@ -253,6 +254,13 @@ async def async_setup_entry(
     coordinator: BeszelDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
     known: set[tuple[str, str]] = set()
     previous_items: dict[str, Any] = {}
+    registry = er.async_get(hass)
+    cleaner = StaleEntityCleaner(
+        registry,
+        er.async_entries_for_config_entry(registry, entry.entry_id),
+        "sensor",
+        er.RegistryEntryDisabler.INTEGRATION,
+    )
 
     @callback
     def _async_add_new_systems() -> None:
@@ -262,7 +270,12 @@ async def async_setup_entry(
                 continue
             previous_items[system_id] = item
             descriptions = list(SENSORS)
-            for metric in metrics(item):
+            found = coordinator.metrics_for(system_id, item)
+            for key in cleaner.remove_vanished(
+                system_id, item, {metric.key for metric in found}
+            ):
+                known.discard((system_id, key))
+            for metric in found:
                 if metric.binary or (system_id, metric.key) in known:
                     continue
                 if metric.value(item) is None:
@@ -294,6 +307,7 @@ async def async_setup_entry(
                 if identity in known:
                     continue
                 known.add(identity)
+                cleaner.track(system_id, description.key)
                 entities.append(
                     BeszelSensor(coordinator, entry, system_id, description)
                 )
@@ -302,6 +316,17 @@ async def async_setup_entry(
 
     _async_add_new_systems()
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new_systems))
+
+
+def hub_device_info(entry: ConfigEntry) -> DeviceInfo:
+    """Device for the Beszel Hub itself (connection diagnostic, update)."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"hub_{entry.entry_id}")},
+        name="Beszel Hub",
+        manufacturer="Beszel",
+        model="Monitoring Hub",
+        configuration_url=entry.data[CONF_URL],
+    )
 
 
 def system_device_info(

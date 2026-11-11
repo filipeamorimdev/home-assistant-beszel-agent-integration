@@ -4,7 +4,11 @@
 
 Every Beszel system becomes a device with core sensors: status, CPU, memory, disk, temperature, network, uptime and load. GPU, battery, systemd health and agent version appear when Beszel reports them. New systems appear without a restart, and offline machines show as down instead of publishing stale numbers.
 
-Extra detail, such as RAM and disk totals, swap and fan speed, appears when Beszel reports it. Very detailed sensors (per-core CPU, per-interface network, per-GPU, machine identity) are disabled by default; enable them on the device page.
+Extra detail, such as RAM and disk totals, swap and fan speed, appears when Beszel reports it. Very detailed sensors (per-core CPU, per-interface network, per-GPU, machine identity) are disabled by default; enable them on the device page. Per-container and per-service sensors you never enabled are removed again when the container or service no longer exists in Beszel.
+
+## Beszel Hub
+
+The **Beszel Hub** device has a connection diagnostic and an **Update** entity with the Hub's installed version. To see when a newer Beszel release is out, start the Hub with `CHECK_UPDATES=true`; without it the entity shows **Unknown** and its details say to activate `CHECK_UPDATES` on the Hub. Updating is done on the Hub itself, not from Home Assistant.
 
 ## Extra data
 
