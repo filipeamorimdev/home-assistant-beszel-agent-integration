@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.4] - 2026-11-12
+
+### Added
+- **Hide the usage bars:** both card editors have a new checkbox (`hide_bars: true`) that removes the bars and keeps the values. It applies to the machine card's compact tiles, detailed list and terminal style, and to the systems table and its grid.
+
+  ![Systems table without usage bars](docs/images/beszel-systems-table-no-bars.png)
+
 ## [0.1.3] - 2026-11-11
 
 ### Added

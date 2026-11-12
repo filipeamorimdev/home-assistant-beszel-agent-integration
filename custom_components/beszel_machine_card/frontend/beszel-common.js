@@ -814,8 +814,9 @@ export function renderDetailRows(model, options = {}) {
     if (!valueHtml && !options.showEmpty) return;
     // Meter rows stack the value above its bar in one cell, so the label
     // lines up with the pair instead of a value squeezed beside a bar.
-    const value = meter && valueHtml
-      ? `<span class="bz-cell"><span class="bz-value">${valueHtml}</span>${meterHtml(meter.percent, meter.level)}</span>`
+    // `hideBars` leaves the value alone, like any other row.
+    const value = meter && valueHtml && !options.hideBars
+      ?`<span class="bz-cell"><span class="bz-value">${valueHtml}</span>${meterHtml(meter.percent, meter.level)}</span>`
       : `<span class="bz-value bz-wide">${valueHtml}</span>`;
     rows.push(`<div class="bz-row" data-row="${escapeHtml(key)}"><ha-icon class="bz-icon" icon="${ROW_ICONS[key] || ROW_ICONS.extra}"></ha-icon>${labelHtml(label)}${value}</div>`);
   };

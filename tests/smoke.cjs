@@ -348,6 +348,24 @@ html = card.shadowRoot.innerHTML;
 assert.match(html, />rx   <\/td><td class="b">[^<]*<\/td><td class="v">741 KiB\/s</);
 assert.match(html, />tx   <\/td><td class="b">[^<]*<\/td><td class="v">617 KiB\/s</);
 
+// hide_bars drops the usage bars and keeps the values, in every layout.
+card.setConfig({ device_id: 'dev1', hide_bars: true });
+html = card.shadowRoot.innerHTML;
+assert.doesNotMatch(html, /class="bar-wrap"|class="bar-fill/, 'compact tiles lose their bars');
+assert.match(html, /class="metric-val">16\.1<\/span><span class="metric-unit">%<\/span>/, 'compact keeps the value');
+assert.match(html, /8\.1 \/ 15\.6 GiB · cache 1\.0 GiB/, 'compact keeps the merged sizes');
+card.setConfig({ device_id: 'dev1', layout: 'detailed', hide_bars: true });
+html = card.shadowRoot.innerHTML;
+assert.doesNotMatch(html, /class="bz-meter"|class="bz-fill/, 'detailed rows lose their bars');
+assert.match(html, /CPU:<\/span><span class="bz-value bz-wide">16\.1%<\/span>/, 'detailed keeps the value');
+assert.match(html, /Load Avg:<\/span><span class="bz-value bz-wide"><span class="bz-dot bz-ok">/, 'other rows are untouched');
+card.setConfig({ device_id: 'dev1', style: 'terminal', hide_bars: true });
+html = card.shadowRoot.innerHTML;
+assert.doesNotMatch(html, /class="b"|\[[#.]+\]/, 'terminal loses the bar column');
+assert.match(html, />cpu  <\/td><td class="v">16\.1%</);
+assert.match(html, />net  <\/td><td class="v">1\.33 MiB\/s</);
+assert.match(source, /id="hide-bars"><span>Hide the usage bars \(values only\)<\/span>/);
+
 // show_empty_rows keeps sensors without a value (blank, never zero) in every layout.
 card.setConfig({ device_id: 'dev1', ...editorSlots, entity_cpu: '', show_empty_rows: true });
 html = card.shadowRoot.innerHTML;
@@ -543,7 +561,7 @@ for (const echoConfig of [false, true]) {
   ]);
   const controls = new Map();
   const node = () => ({ value: '', innerHTML: '', checked: false, disabled: false, querySelectorAll: () => [], addEventListener() {} });
-  for (const id of ['device', 'autofill', 'advanced-sensors', 'advanced-summary', 'layout', 'show-empty-rows', 'split-network']) controls.set(id, node());
+  for (const id of ['device', 'autofill', 'advanced-sensors', 'advanced-summary', 'layout', 'show-empty-rows', 'split-network', 'hide-bars']) controls.set(id, node());
   const pickers = new Map();
   const pickerHost = {
     textContent: '',
@@ -602,6 +620,12 @@ for (const echoConfig of [false, true]) {
   switching._config = { ...switching._config, style: undefined };
   switching._syncEditorFromConfig();
   assert.equal(controls.get('layout').value, 'detailed');
+
+  // The hide-bars checkbox follows the config.
+  assert.equal(controls.get('hide-bars').checked, false);
+  switching._config = { ...switching._config, hide_bars: true };
+  switching._syncEditorFromConfig();
+  assert.equal(controls.get('hide-bars').checked, true);
 }
 assert.match(source, /Additional Beszel metrics/);
 assert.match(source, /advanced-preset/);
@@ -829,6 +853,18 @@ tableHtml = tableCard.shadowRoot.innerHTML;
 assert.match(tableHtml, /class="grid-card"/);
 assert.match(tableHtml, /Services:<\/span><span class="bz-value bz-wide"><span class="bz-dot bz-crit">/);
 assert.doesNotMatch(tableHtml, /<table/);
+// hide_bars keeps the percentages without their bars, in grid and table.
+assert.match(tableHtml, /CPU:<\/span><span class="bz-cell"><span class="bz-value">22\.2%<\/span><span class="bz-meter">/);
+tableCard.setConfig({ title: 'Grid', layout: 'grid', hide_bars: true });
+tableHtml = tableCard.shadowRoot.innerHTML;
+assert.doesNotMatch(tableHtml, /class="bz-meter"|class="bz-fill/, 'grid cards lose their bars');
+assert.match(tableHtml, /CPU:<\/span><span class="bz-value bz-wide">22\.2%<\/span>/, 'grid keeps the value');
+tableCard.setConfig({ title: 'Table', layout: 'table', hide_bars: true, columns: ['cpu', 'memory', 'battery'] });
+tableHtml = tableCard.shadowRoot.innerHTML;
+assert.doesNotMatch(tableHtml, /class="bz-meter"|class="bz-fill|class="pct"/, 'table cells lose their bars');
+assert.match(tableHtml, /<td>22\.2%<\/td><td>95\.0%<\/td><td>91\.0%<\/td>/, 'table keeps the values');
+assert.match(tableHtml, /<td>0\.00%<\/td>/, 'real zero kept');
+assert.doesNotMatch(tableHtml, /NaN|—%|>unknown<|>unavailable</);
 tableCard.setConfig({ title: 'Auto', layout: 'auto' });
 tableCard._width = 900;
 tableCard._render();
@@ -905,7 +941,7 @@ tableEditor.hass = tableHass();
 const ed = tableEditor.shadowRoot;
 const editorHtml = ed.innerHTML;
 // Every setup option is present.
-for (const id of ['title', 'layout', 'hub-status', 'hide-offline', 'only-alerts', 'hide-empty-columns', 'split-network', 'systems', 'columns']) {
+for (const id of ['title', 'layout', 'hub-status', 'hide-offline', 'only-alerts', 'hide-empty-columns', 'split-network', 'hide-bars', 'systems', 'columns']) {
   assert.match(editorHtml, new RegExp(`id="${id}"`), `editor has #${id}`);
 }
 assert.match(editorHtml, /Show only systems with alerts \(hide the card when none\)/);
@@ -930,6 +966,8 @@ assert.equal(ed.getElementById('only-alerts').checked, false, 'only_alerts defau
 assert.equal(ed.getElementById('hide-offline').disabled, false);
 assert.equal(ed.getElementById('hide-empty-columns').checked, true);
 assert.equal(ed.getElementById('split-network').checked, false);
+assert.equal(ed.getElementById('hide-bars').checked, false, 'hide_bars defaults off');
+assert.match(editorHtml, /id="hide-bars"><span>Hide the usage bars \(values only\)<\/span>/);
 assert.doesNotMatch(editorHtml, /id="terminal-style"/, 'terminal style is a Layout choice, not a checkbox');
 assert.match(editorHtml, /<option value="terminal">Terminal/);
 // Picking Terminal sets style: terminal; picking another layout clears it.
@@ -956,6 +994,11 @@ const hideOffline = ed.getElementById('hide-offline');
 hideOffline.checked = false;
 hideOffline.listeners.change.forEach(fn => fn());
 assert.equal(editorEvents.at(-1).hide_when_offline, false);
+// Ticking hide-bars emits hide_bars.
+const hideBars = ed.getElementById('hide-bars');
+hideBars.checked = true;
+hideBars.listeners.change.forEach(fn => fn());
+assert.equal(editorEvents.at(-1).hide_bars, true);
 // Unchecking systems narrows system_ids; the last one cannot be unchecked.
 tableEditor.setConfig({ title: 'Homelab' });
 const srvBox = ed.querySelector('[data-system-id="srv"]');

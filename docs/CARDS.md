@@ -20,7 +20,8 @@ One server, as compact tiles or as a detailed list.
 - Network shows Beszel's combined total. `split_network: true` shows download ↓ and upload ↑ separately.
 - Values use the unit and display precision set in each sensor's settings (without a display precision the cards keep their own rounding). Sensors left on the default bytes (B, B/s) are scaled automatically (KiB/s, MiB/s…).
 - Sensors without a value are hidden. `show_empty_rows: true` keeps them, blank.
-- Both options apply to every layout, terminal included.
+- `hide_bars: true` (**Hide the usage bars** in the editor) removes the bars and keeps the values.
+- These three options apply to every layout, terminal included.
 - `hide_when_offline: true` hides the whole card while the machine is down. It stays visible in edit mode.
 - `language` sets the language of this card only; see [Language](#language).
 
@@ -31,6 +32,7 @@ title: TrueNAS
 layout: detailed          # or compact (default)
 language: pt              # en (default) | pt | es | fr | de
 hide_when_offline: false
+hide_bars: false          # true = values only, no usage bars
 ```
 
 ![Card configuration](images/beszel-card-configuration.jpg)
@@ -47,6 +49,9 @@ Beszel's "All Systems" view for every machine: a sortable table, or a grid of ca
 - Choose only the columns you need. Columns no machine reports are hidden automatically.
 - Offline machines stay in the list with blank metrics. `hide_when_offline: true` removes them.
 - `only_alerts: true` keeps only machines with an amber or red indicator (high usage, hot CPU, low battery, a failed service, a pending status) and hides the card when there are none. It stays visible in edit mode.
+- `hide_bars: true` (**Hide the usage bars** in the editor) shows the percentages without their bars, in the table and the grid.
+
+  ![Systems table without usage bars](images/beszel-systems-table-no-bars.png)
 
 ```yaml
 type: custom:beszel-systems-table-card
@@ -56,6 +61,7 @@ language: de              # en (default) | pt | es | fr | de
 columns: [cpu, load, temperature]
 hide_when_offline: true
 only_alerts: false
+hide_bars: false          # true = values only, no usage bars
 ```
 
 ## Language

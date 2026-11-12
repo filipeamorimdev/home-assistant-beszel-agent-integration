@@ -41,7 +41,7 @@ import {
   temperatureLevel,
   thresholds,
   translate,
-} from './beszel-common.js?v=0.1.3';
+} from './beszel-common.js?v=0.1.4';
 
 // Beszel's column order. Headers come from translate(language, key).
 const TABLE_COLUMNS = [
@@ -84,13 +84,16 @@ const DEFAULT_CONFIG = {
   only_alerts: false,
   hide_empty_columns: true,
   split_network: false,
+  hide_bars: false,
   style: 'default',
 };
 
-function percentCell(value, level, precision) {
+// `hideBars` (the `hide_bars` option) keeps the percentage and drops its bar.
+function percentCell(value, level, precision, hideBars) {
   const text = formatPercent(value, precision);
   if (!text) return '';
-  return `<span class="pct"><span class="pct-val">${escapeHtml(text)}</span><span class="bz-meter"><span class="bz-fill bz-${level}" style="width:${clampPercent(value)}%"></span></span></span>`;
+  if (hideBars) return escapeHtml(text);
+  return`<span class="pct"><span class="pct-val">${escapeHtml(text)}</span><span class="bz-meter"><span class="bz-fill bz-${level}" style="width:${clampPercent(value)}%"></span></span></span>`;
 }
 
 function readStorage(key) {
@@ -324,19 +327,23 @@ class BeszelSystemsTableCard extends HTMLElement {
     const n = readingNumber(pick(state, 'state'));
     if (!Number.isFinite(n) || n < 0) return '';
     const precision = pick(this._hass, 'entities', system.entities[key], 'display_precision');
-    if (PERCENT_EXTRAS.has(key)) return n <= 100 ? percentCell(n, meterLevel(n, limits), precision) : '';
+    if (PERCENT_EXTRAS.has(key)) return n <= 100 ? this._percentCell(n, meterLevel(n, limits), precision) : '';
     if (RATE_EXTRAS.has(key)) return escapeHtml(formatRateState(state, precision));
     const reading = entityReading(state, precision);
     return reading ? escapeHtml(`${reading.value}${reading.unit ? ` ${reading.unit}` : ''}`) : '';
   }
 
+  _percentCell(value, level, precision) {
+    return percentCell(value, level, precision, pick(this._config, 'hide_bars') === true);
+  }
+
   _cell(system, model, column, limits) {
     switch (column) {
-      case 'cpu': return percentCell(model.cpu, meterLevel(model.cpu, limits), model.digits.cpu);
-      case 'memory': return percentCell(model.memory, meterLevel(model.memory, limits), model.digits.memory);
-      case 'disk': return percentCell(model.disk, meterLevel(model.disk, limits), model.digits.disk);
-      case 'gpu': return percentCell(model.gpu, meterLevel(model.gpu, limits), model.digits.gpu);
-      case 'battery': return percentCell(model.battery, batteryLevel(model.battery), model.digits.battery);
+      case 'cpu': return this._percentCell(model.cpu, meterLevel(model.cpu, limits), model.digits.cpu);
+      case 'memory': return this._percentCell(model.memory, meterLevel(model.memory, limits), model.digits.memory);
+      case 'disk': return this._percentCell(model.disk, meterLevel(model.disk, limits), model.digits.disk);
+      case 'gpu': return this._percentCell(model.gpu, meterLevel(model.gpu, limits), model.digits.gpu);
+      case 'battery': return this._percentCell(model.battery, batteryLevel(model.battery), model.digits.battery);
       case 'load': {
         const loads = formatLoads(model.loads, model.digits.loads);
         return loads ? `<span class="bz-dot bz-${loadLevel(model.loads, model.threads, limits)}"></span>${escapeHtml(loads)}` : '';
@@ -445,7 +452,7 @@ class BeszelSystemsTableCard extends HTMLElement {
       body = `<div class="grid">${rows.map(({ system, model }) => `
         <div class="grid-card">
           <div class="bz-head"><span class="bz-dot bz-${statusLevelOf(model)}"></span><span class="bz-name">${escapeHtml(system.name)}</span><button class="bz-menu" type="button" data-device="${escapeHtml(system.id)}" title="${t('open_device')}" aria-label="${t('open_device')}: ${escapeHtml(system.name)}"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button></div>
-          <div class="bz-body">${renderDetailRows(model, { limits, language, showEmpty: c.show_empty_rows === true, splitNetwork: c.split_network === true })}</div>
+          <div class="bz-body">${renderDetailRows(model, { limits, language, showEmpty: c.show_empty_rows === true, splitNetwork: c.split_network === true, hideBars: c.hide_bars === true })}</div>
         </div>`).join('')}</div>`;
     } else {
       let columns = this._columns();
@@ -705,6 +712,7 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
         <label class="check"><input type="checkbox" id="only-alerts"><span>Show only systems with alerts (hide the card when none)</span></label>
         <label class="check"><input type="checkbox" id="hide-empty-columns"><span>Hide columns no system reports</span></label>
         <label class="check"><input type="checkbox" id="split-network"><span>Split network into ↓ / ↑</span></label>
+        <label class="check"><input type="checkbox" id="hide-bars"><span>Hide the usage bars (values only)</span></label>
         <div class="section">Systems</div>
         <div class="checks" id="systems">${this._systems.length ? this._systems.map(system => `<label class="check"><input type="checkbox" data-system-id="${escapeHtml(system.id)}"><span>${escapeHtml(system.name)}</span></label>`).join('') : '<span class="empty">No Beszel systems found</span>'}</div>
         <div class="section">Columns</div>
@@ -753,6 +761,7 @@ class BeszelSystemsTableCardEditor extends HTMLElement {
     onlyAlertsBox.addEventListener('change', syncHideOffline);
     bind('hide-empty-columns', 'hide_empty_columns', true);
     bind('split-network', 'split_network', false);
+    bind('hide-bars', 'hide_bars', false);
     const advanced = this.shadowRoot.querySelector('details.advanced-columns');
     if (advanced) {
       advanced.addEventListener('toggle', () => { this._advancedColumnsOpen = advanced.open; });

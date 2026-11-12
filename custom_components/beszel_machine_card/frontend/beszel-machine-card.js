@@ -21,7 +21,8 @@
  *   hide_when_offline: false     # hide the whole card while the system is offline
  *   show_empty_rows: false       # detailed: keep blank GPU/Bat/Services rows
  *   split_network: false         # detailed: ↓/↑ instead of Beszel's combined total
- *   warning_threshold: 65        # meter colours (Beszel defaults)
+ *   hide_bars: false             # values only, without the usage bars
+ *   warning_threshold: 65      # meter colours (Beszel defaults)
  *   critical_threshold: 90
  *   entity_cpu: sensor.nas_cpu_usage   # any entity_* key overrides discovery
  */
@@ -62,7 +63,7 @@ import {
   translate,
   translateMetricName,
   validReading,
-} from './beszel-common.js?v=0.1.3';
+} from './beszel-common.js?v=0.1.4';
 
 // ─── Sensor discovery heuristics ────────────────────────────────────────────
 // For each slot, we try a list of patterns (ordered by confidence).
@@ -464,6 +465,9 @@ class BeszelMachineCard extends HTMLElement {
 
   _splitNetwork() { return pick(this._config, 'split_network') === true; }
 
+  // `hide_bars`: keep the percentages and drop their bars, in every layout.
+  _hideBars() { return pick(this._config, 'hide_bars') === true; }
+
   _render() {
     if (!this._hass || !this._config) return;
     const c = this._config;
@@ -506,10 +510,11 @@ class BeszelMachineCard extends HTMLElement {
     const fill = has
       ? `<div class="bar-fill bz-${meterLevel(value, limits)}" style="width:${clampPercent(value)}%"></div>`
       : '';
+    const bar = this._hideBars() ? '' : `<div class="bar-wrap">${fill}</div>`;
     return `<div class="metric"><div class="metric-label">${escapeHtml(label)}</div>`
       + `<span class="metric-val">${escapeHtml(formatPercentValue(value, precision))}</span><span class="metric-unit">${has ? '%' : ''}</span>`
       + `${sub ? `<div class="metric-sub">${escapeHtml(sub)}</div>` : ''}`
-      + `<div class="bar-wrap">${fill}</div></div>`;
+      + `${bar}</div>`;
   }
 
   _compactHtml(model, limits, entities, name, warning, offline) {
@@ -579,6 +584,7 @@ class BeszelMachineCard extends HTMLElement {
         language: this._language(),
         showEmpty: this._showEmpty(),
         splitNetwork: this._splitNetwork(),
+        hideBars: this._hideBars(),
         extras: this._extras(),
       });
     const footer = c.subtitle ? `<div class="footer"><div class="subtitle">${escapeHtml(c.subtitle)}</div></div>` : '';
@@ -592,15 +598,17 @@ class BeszelMachineCard extends HTMLElement {
     const pct = (value, precision) => (Number.isFinite(value) ? `${value.toFixed(digitsFor(precision, 1))}%` : '');
     // Rows without a valid reading are skipped unless empty rows are kept.
     const showEmpty = this._showEmpty();
+    // Without bars the middle column goes, leaving label and value.
+    const hideBars = this._hideBars();
     const line = (label, bar, value) => !value && !showEmpty ? '' :
       `<tr><td class="k">${escapeHtml((label + '     ').slice(0, 5))}</td>`
-      + `<td class="b">${escapeHtml(bar)}</td>`
+      + (hideBars ? '' : `<td class="b">${escapeHtml(bar)}</td>`)
       + `<td class="v">${escapeHtml(value)}</td></tr>`;
     const blank = '            ';
 
     let rows = '';
     if (offline) {
-      rows = '<tr><td colspan="3" class="off">system offline (hidden outside edit mode)</td></tr>';
+      rows = `<tr><td colspan="${hideBars ? 2 : 3}" class="off">system offline (hidden outside edit mode)</td></tr>`;
     } else {
       rows += line('cpu', asciiBar(model.cpu), pct(model.cpu, model.digits.cpu));
       rows += line('mem', asciiBar(model.memory), pct(model.memory, model.digits.memory));
@@ -662,6 +670,7 @@ class BeszelMachineCard extends HTMLElement {
       hide_when_offline: false,
       show_empty_rows: false,
       split_network: false,
+      hide_bars: false,
       extra_entities: [],
       extra_pinned: [],
     };
@@ -754,6 +763,8 @@ class BeszelMachineCardEditor extends HTMLElement {
     if (showEmpty) showEmpty.checked = c.show_empty_rows === true;
     const splitNetwork = root.getElementById('split-network');
     if (splitNetwork) splitNetwork.checked = c.split_network === true;
+    const hideBars = root.getElementById('hide-bars');
+    if (hideBars) hideBars.checked = c.hide_bars === true;
 
     const select = root.getElementById('device');
     if (select && select.value !== (c.device_id || '')) {
@@ -1231,6 +1242,7 @@ class BeszelMachineCardEditor extends HTMLElement {
         </label>
         <label class="check"><input type="checkbox" id="show-empty-rows"><span>Show sensors without a value (blank) instead of hiding them</span></label>
         <label class="check"><input type="checkbox" id="split-network"><span>Split network into ↓ / ↑</span></label>
+        <label class="check"><input type="checkbox" id="hide-bars"><span>Hide the usage bars (values only)</span></label>
 
         <div class="section-title">Device</div>
 
@@ -1301,6 +1313,9 @@ class BeszelMachineCardEditor extends HTMLElement {
     splitNetwork.addEventListener('change', () => {
       this._emit({ split_network: splitNetwork.checked });
     });
+    const hideBars = this.shadowRoot.getElementById('hide-bars');
+    hideBars.checked = c.hide_bars === true;
+    hideBars.addEventListener('change', () => this._emit({ hide_bars: hideBars.checked }));
 
     const select = this.shadowRoot.getElementById('device');
     select.value = c.device_id || '';

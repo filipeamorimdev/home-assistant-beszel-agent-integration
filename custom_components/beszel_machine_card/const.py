@@ -22,4 +22,4 @@ HUB_INFO_RETRY_INTERVAL = 5 * 60
 
 CARD_URL = "/beszel_machine_card/beszel-machine-card.js"
 TABLE_CARD_URL = "/beszel_machine_card/beszel-systems-table-card.js"
-CARD_VERSION = "0.1.3"
+CARD_VERSION = "0.1.4"
